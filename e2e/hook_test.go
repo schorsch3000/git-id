@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"git-id/internal/repo"
 )
 
 // hookEnv prepares an address book with identity "work" and these places:
@@ -259,6 +261,37 @@ func TestHookReminderIsBrightRedOnATerminal(t *testing.T) {
 			}
 
 			out, _ = inTerminal(t, h.env, []string{"NO_COLOR=1"}, cmd, "lists them")
+			if !strings.Contains(out, msg) || strings.Contains(out, "\x1b[") {
+				t.Errorf("NO_COLOR not honoured:\n%q", out)
+			}
+		})
+	}
+}
+
+// TestHookSSHWarningIsYellowOnATerminal is the same check for the
+// $GIT_SSH_COMMAND warning, which is bold bright yellow so that it can be told
+// apart from the red "no identity" reminder.
+func TestHookSSHWarningIsYellowOnATerminal(t *testing.T) {
+	h := newHookEnv(t)
+	msg := "git-id: " + repo.SSHOverrideWarning
+	cmds := map[string]string{
+		"bash": `bash -c 'eval "$(git-id hook bash)"; cd ` + h.idDeep + `; __git_id_hook'`,
+		"zsh":  `zsh -f -c 'eval "$(git-id hook zsh)"; cd ` + h.idDeep + `'`,
+		"fish": `fish --no-config -c 'git-id hook fish | source; cd ` + h.idDeep + `'`,
+	}
+	for shell, cmd := range cmds {
+		t.Run(shell, func(t *testing.T) {
+			requireShell(t, shell)
+			requireShell(t, "zsh")
+			out, _ := inTerminal(t, h.env, []string{"GIT_SSH_COMMAND=ssh"}, cmd, "Unset it.")
+			if !strings.Contains(out, "\x1b[1;93m"+msg+"\x1b[0m") {
+				t.Errorf("warning is not bold bright yellow on a terminal:\n%q", out)
+			}
+			if strings.Contains(out, "\x1b[1;91m") {
+				t.Errorf("warning is red:\n%q", out)
+			}
+
+			out, _ = inTerminal(t, h.env, []string{"GIT_SSH_COMMAND=ssh", "NO_COLOR=1"}, cmd, "Unset it.")
 			if !strings.Contains(out, msg) || strings.Contains(out, "\x1b[") {
 				t.Errorf("NO_COLOR not honoured:\n%q", out)
 			}

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 
 	"git-id/internal/gitcfg"
@@ -270,6 +271,8 @@ func fileExists(p string) bool {
 // warnSSHOverride tells the user when $GIT_SSH_COMMAND defeats the identity's key.
 func warnSSHOverride(cmd *cobra.Command) {
 	if repo.SSHOverridden() {
-		fmt.Fprintln(cmd.ErrOrStderr(), repo.SSHOverrideWarning)
+		// Bold bright yellow like the shell hook's warning, only on a terminal.
+		warn := lipgloss.NewRenderer(cmd.ErrOrStderr()).NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
+		fmt.Fprintln(cmd.ErrOrStderr(), warn.Render(repo.SSHOverrideWarning))
 	}
 }

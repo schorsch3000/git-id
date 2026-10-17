@@ -473,3 +473,30 @@ func TestFailedInitLeavesGitAlone(t *testing.T) {
 		t.Errorf("user.useConfigOnly set by a failed init: %s", out)
 	}
 }
+
+func TestSSHOverrideWarningIsYellowOnlyWhenColoursAreOn(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+	warn := idrepo.SSHOverrideWarning
+
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("CLICOLOR_FORCE", "")
+	if out := mustRun(t, book, "use", "work"); strings.Contains(out, "\x1b[") || !strings.Contains(out, warn) {
+		t.Errorf("plain output expected without a terminal:\n%q", out)
+	}
+	t.Setenv("CLICOLOR_FORCE", "1")
+	out := mustRun(t, book, "use", "work")
+	if !strings.Contains(out, "\x1b[") || !strings.Contains(out, warn) {
+		t.Errorf("CLICOLOR_FORCE did not colour the warning:\n%q", out)
+	}
+	if strings.Contains(out, "\x1b[1;31m") || strings.Contains(out, "\x1b[1;91m") {
+		t.Errorf("the warning is red:\n%q", out)
+	}
+	t.Setenv("NO_COLOR", "1")
+	if out := mustRun(t, book, "use", "work"); strings.Contains(out, "\x1b[") {
+		t.Errorf("NO_COLOR ignored:\n%q", out)
+	}
+}
