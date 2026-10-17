@@ -37,14 +37,11 @@ jobs:
           msg="${msg//'%'/'%25'}"; msg="${msg//$'\r'/'%0D'}"; msg="${msg//$'\n'/'%0A'}"
           echo "::error title=go test failures (${{ runner.os }})::${msg}"
 
-  # Run the tests on macOS and Windows too. The tests were written on Linux:
-  # tools that are not there (fish, bash-completion, git-filter-repo) make the
-  # tests that need them skip, and on Windows the end-to-end tests skip as they
-  # need POSIX shells. The Windows job does not fail the workflow yet, so the
-  # first runs can show what is left; drop continue-on-error once it is green.
+  # Run the tests on macOS and Windows too. Tools that are not there (fish,
+  # bash-completion, git-filter-repo) make the tests that need them skip, and
+  # on Windows the end-to-end tests skip as they need POSIX shells.
   test-other-os:
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
