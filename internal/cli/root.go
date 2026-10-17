@@ -13,5 +13,15 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: false,
 	}
 	root.PersistentFlags().String("book", "", "address book file (default $"+bookEnv+" or $XDG_CONFIG_HOME/git-id/book.toml)")
+	root.AddCommand(
+		newNameCmd(),
+		newEmailCmd(),
+		newKeyCmd(),
+		newIdentityAddCmd(),
+		newIdentityEditCmd(),
+		newIdentityRmCmd(),
+		newIdentityLsCmd(),
+		newIdentityShowCmd(),
+	)
 	return root
 }
