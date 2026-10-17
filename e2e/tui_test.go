@@ -116,10 +116,10 @@ func TestTUIKeyPicker(t *testing.T) {
 
 	runTUI(t, e, repo, []tuiStep{
 		{nil, "id-one"},
-		{[]string{"l", "l", "l", "a"}, "ctrl+o pick a key"}, // keys tab, add form
-		{[]string{"\x0f"}, "id_picked"},                     // the picker lists the key
-		{[]string{"\r"}, "picked"},                          // chosen: the form shows path and label
-		{[]string{"\x13"}, "added key picked"},              // ctrl+s saves
+		{[]string{"l", "l", "l", "a"}, "pick a key from"}, // keys tab, add form
+		{[]string{"\x0f"}, "id_picked"},                   // the picker lists the key
+		{[]string{"\r"}, "picked"},                        // chosen: the form shows path and label
+		{[]string{"\x13"}, "added key picked"},            // ctrl+s saves
 	})
 
 	out := e.gid(t, e.home, "key", "ls")

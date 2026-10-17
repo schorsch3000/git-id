@@ -63,6 +63,7 @@ var (
 	idleTab   = lipgloss.NewStyle().Padding(0, 1)
 	cursorSty = lipgloss.NewStyle().Bold(true)
 	dimSty    = lipgloss.NewStyle().Faint(true)
+	keySty    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")) // a key you can press
 	errSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	okSty     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 )
@@ -465,7 +466,7 @@ func (m *Model) View() string {
 	case modeForm:
 		sb.WriteString(m.viewForm())
 	case modeConfirm:
-		sb.WriteString(m.confirm.prompt + "\n")
+		sb.WriteString(strings.Replace(m.confirm.prompt, "[y/N]", "["+keySty.Render("y")+"/N]", 1) + "\n")
 	case modePicker:
 		sb.WriteString(m.viewPicker())
 	default:
@@ -480,14 +481,14 @@ func (m *Model) View() string {
 		}
 		sb.WriteString(sty.Render(m.status) + "\n")
 	}
-	sb.WriteString(dimSty.Render(m.help()) + "\n")
+	sb.WriteString(renderHints(m.hints()) + "\n")
 	return sb.String()
 }
 
 func (m *Model) viewList() string {
 	items := m.items()
 	if len(items) == 0 {
-		return dimSty.Render(fmt.Sprintf("(no %ss, press a to add one)", m.tab.noun())) + "\n"
+		return dimSty.Render(fmt.Sprintf("(no %s, press ", m.tab.plural())) + keySty.Render("a") + dimSty.Render(" to add one)") + "\n"
 	}
 	width := 0
 	for _, it := range items {
@@ -535,23 +536,24 @@ func (m *Model) viewForm() string {
 	return sb.String()
 }
 
-func (m *Model) help() string {
+func (m *Model) hints() []hint {
 	switch m.mode {
 	case modeForm:
+		choose := hint{"←/→", "choose"}
 		if m.tab == tabKeys {
-			return "tab/shift+tab field  ctrl+o pick a key from ~/.ssh  enter next/save  ctrl+s save  esc cancel"
+			choose = hint{"ctrl+o", "pick a key from ~/.ssh"}
 		}
-		return "tab/shift+tab field  ←/→ choose  enter next/save  ctrl+s save  esc cancel"
+		return []hint{{"tab/shift+tab", "field"}, choose, {"enter", "next/save"}, {"ctrl+s", "save"}, {"esc", "cancel"}}
 	case modePicker:
-		return "↑/↓ move  enter choose  esc back to the form"
+		return []hint{{"↑/↓", "move"}, {"enter", "choose"}, {"esc", "back to the form"}}
 	case modeConfirm:
-		return "y confirm  any other key cancels"
+		return []hint{{"y", "confirm"}, {"any other key", "cancels"}}
 	}
-	h := "←/→ tab  ↑/↓ move  a add  e edit  d delete  q quit"
+	h := []hint{{"←/→", "tab"}, {"↑/↓", "move"}}
 	if m.tab == tabIdentities {
-		h = "←/→ tab  ↑/↓ move  enter use here  a add  e edit  d delete  q quit"
+		h = append(h, hint{"enter", "use here"})
 	}
-	return h
+	return append(h, hint{"a", "add"}, hint{"e", "edit"}, hint{"d", "delete"}, hint{"q", "quit"})
 }
 
 func (m *Model) openPicker() {
@@ -636,4 +638,23 @@ func (m *Model) viewPicker() string {
 		}
 	}
 	return sb.String()
+}
+
+// hint is one key the user can press and what it does.
+type hint struct{ key, desc string }
+
+// renderHints draws "key description" pairs with the key highlighted.
+func renderHints(hs []hint) string {
+	parts := make([]string, len(hs))
+	for i, h := range hs {
+		parts[i] = keySty.Render(h.key) + " " + dimSty.Render(h.desc)
+	}
+	return strings.Join(parts, "  ")
+}
+
+func (t tab) plural() string {
+	if t == tabIdentities {
+		return "identities"
+	}
+	return t.noun() + "s"
 }

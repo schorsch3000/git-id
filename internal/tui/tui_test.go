@@ -4,10 +4,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 	"golang.org/x/crypto/ssh"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -213,7 +216,7 @@ func TestAddIdentityNeedsDatapoints(t *testing.T) {
 	if !strings.Contains(m.View(), "add at least one name, email and key first") {
 		t.Errorf("view:\n%s", m.View())
 	}
-	if !strings.Contains(m.View(), "no identitys") && !strings.Contains(m.View(), "press a to add") {
+	if !strings.Contains(m.View(), "(no identities, press a to add one)") {
 		t.Errorf("empty hint missing:\n%s", m.View())
 	}
 }
@@ -606,5 +609,78 @@ func TestPickKeyInEditFormAndMarksKnownKeys(t *testing.T) {
 	press(t, m, "ctrl+s")
 	if got := reload(t, m).Keys["k1"]; got.Private != ed || got.Public != edPub {
 		t.Errorf("k1 = %+v, want the picked key (was %s)", got, keyFile)
+	}
+}
+
+var ansiSeq = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// withColor forces colour output (tests run without a terminal) and restores
+// the previous profile afterwards.
+func withColor(t *testing.T) {
+	t.Helper()
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	t.Cleanup(func() { lipgloss.SetColorProfile(old) })
+}
+
+func TestKeyHintsAreHighlighted(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	m.sshDir = t.TempDir()
+
+	plain := func() string { return ansiSeq.ReplaceAllString(m.View(), "") }
+	// Each step: the keys that must be coloured and the plain footer text.
+	check := func(name string, keys []string, footer string) {
+		t.Helper()
+		v := m.View()
+		for _, k := range keys {
+			if !strings.Contains(v, keySty.Render(k)) {
+				t.Errorf("%s: key %q is not highlighted:\n%q", name, k, v)
+			}
+		}
+		if !strings.Contains(plain(), footer) {
+			t.Errorf("%s: footer text changed, want %q in:\n%s", name, footer, plain())
+		}
+	}
+
+	// Without colour the output is plain text: no escape sequences at all.
+	if strings.Contains(m.View(), "\x1b[") {
+		t.Error("escape sequences emitted although colours are off")
+	}
+
+	withColor(t)
+	if keySty.Render("a") == "a" {
+		t.Fatal("test setup: styles produce no colour")
+	}
+	check("identities", []string{"←/→", "↑/↓", "enter", "a", "e", "d", "q"},
+		"←/→ tab  ↑/↓ move  enter use here  a add  e edit  d delete  q quit")
+
+	press(t, m, "l")
+	check("names", []string{"←/→", "↑/↓", "a", "e", "d", "q"}, "←/→ tab  ↑/↓ move  a add  e edit  d delete  q quit")
+
+	press(t, m, "a")
+	check("name form", []string{"tab/shift+tab", "←/→", "enter", "ctrl+s", "esc"},
+		"tab/shift+tab field  ←/→ choose  enter next/save  ctrl+s save  esc cancel")
+	press(t, m, "esc", "l", "l", "a")
+	check("key form", []string{"ctrl+o", "enter", "ctrl+s", "esc"},
+		"tab/shift+tab field  ctrl+o pick a key from ~/.ssh  enter next/save  ctrl+s save  esc cancel")
+	press(t, m, "ctrl+o")
+	check("picker", []string{"↑/↓", "enter", "esc"}, "↑/↓ move  enter choose  esc back to the form")
+	press(t, m, "esc", "esc", "d")
+	check("confirm footer", []string{"y"}, "y confirm  any other key cancels")
+	if !strings.Contains(m.View(), "["+keySty.Render("y")+"/N]") {
+		t.Errorf("the y of [y/N] is not highlighted:\n%q", m.View())
+	}
+	press(t, m, "n", "l", "l") // back on a tab; remove all keys to see the empty hint
+	b := reload(t, m)
+	if _, err := b.Remove("key", "k1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(m.path, b); err != nil {
+		t.Fatal(err)
+	}
+	m.book = b
+	m.tab = tabKeys
+	if v := m.View(); !strings.Contains(v, keySty.Render("a")) || !strings.Contains(plain(), "(no keys, press a to add one)") {
+		t.Errorf("empty-list hint:\n%q", v)
 	}
 }
