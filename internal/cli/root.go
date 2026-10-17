@@ -22,6 +22,11 @@ func NewRootCmd() *cobra.Command {
 		newIdentityRmCmd(),
 		newIdentityLsCmd(),
 		newIdentityShowCmd(),
+		newUseCmd(),
+		newCurrentCmd(),
+		newSyncCmd(),
+		newSSHCmd(),
+		newInitCmd(),
 	)
 	return root
 }
