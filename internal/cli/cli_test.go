@@ -148,3 +148,18 @@ func TestBookEnv(t *testing.T) {
 		t.Errorf("book not written to env path: %v", err)
 	}
 }
+
+func TestHookScripts(t *testing.T) {
+	book, _, _ := setup(t)
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		out := mustRun(t, book, "hook", sh)
+		for _, want := range []string{"__git_id_hook", "git-id current -q", ".git", hintMessage} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s hook lacks %q", sh, want)
+			}
+		}
+	}
+	if _, err := run(t, book, "hook", "tcsh"); err == nil {
+		t.Error("unknown shell accepted")
+	}
+}

@@ -27,6 +27,7 @@ func NewRootCmd() *cobra.Command {
 		newSyncCmd(),
 		newSSHCmd(),
 		newInitCmd(),
+		newHookCmd(),
 	)
 	return root
 }
