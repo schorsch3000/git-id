@@ -21,6 +21,7 @@ or build it:
 
     make install            # /usr/local/bin/git-id and its man pages
     make install PREFIX=~/.local
+    make uninstall                  # removes both again (same PREFIX)
 
 Needs Go to build; the binary has no runtime dependencies besides `git` and
 `ssh`. `git id cleanup` additionally needs

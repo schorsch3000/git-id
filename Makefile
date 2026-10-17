@@ -10,7 +10,7 @@ PREFIX    ?= /usr/local
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .DEFAULT_GOAL := build
-.PHONY: build man test vet fmt-check release clean install help
+.PHONY: build man test vet fmt-check release clean install uninstall help
 
 help: ## show this help
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/^([a-z-]+):.*## (.*)/  \1\t\2/'
@@ -62,6 +62,10 @@ install: build man ## install git-id and its man pages into $(PREFIX) (so `git i
 	install -d $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/man/man1
 	install -m 0755 $(BIN_DIR)/$(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)
 	install -m 0644 $(BIN_DIR)/man/*.1 $(DESTDIR)$(PREFIX)/share/man/man1/
+
+uninstall: ## remove what install put into $(PREFIX) (same PREFIX and DESTDIR)
+	rm -f $(DESTDIR)$(PREFIX)/bin/$(BINARY)
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/$(BINARY).1 $(DESTDIR)$(PREFIX)/share/man/man1/$(BINARY)-*.1
 
 clean: ## remove build output (bin/ and dist/)
 	rm -rf $(BIN_DIR) $(DIST_DIR)
