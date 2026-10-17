@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"git-id/internal/gitcfg"
 	idrepo "git-id/internal/repo"
@@ -139,32 +138,28 @@ func TestCurrent(t *testing.T) {
 	}
 }
 
-// removeAll deletes dir, retrying for a moment: Windows keeps a directory locked
-// while a process (a finished git, a virus scanner) still holds a handle.
-func removeAll(t *testing.T, dir string) {
+// vanishedRepo registers a repository path that does not exist, as if the
+// repository had been deleted after git id use. (Creating a repository and
+// deleting it again is flaky on Windows, where directories stay locked.)
+func vanishedRepo(t *testing.T, book string) string {
 	t.Helper()
-	var err error
-	for i := 0; i < 50; i++ {
-		if err = os.RemoveAll(dir); err == nil {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+	gone := filepath.Join(t.TempDir(), "vanished")
+	if err := store.AddRepo(store.RegistryPath(book), gone); err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal(err)
+	return gone
 }
 
 func TestSyncPropagatesAndPrunes(t *testing.T) {
 	isolate(t)
 	book, _ := seed(t)
-	a, b := newRepo(t), newRepo(t)
-	for _, r := range []string{a, b} {
-		t.Chdir(r)
-		mustRun(t, book, "use", "work")
-	}
+	a := newRepo(t)
+	t.Chdir(a)
+	mustRun(t, book, "use", "work")
+	b := vanishedRepo(t, book)
 	mustRun(t, book, "email", "edit", "work", "new@example.com")
 	mustRun(t, book, "name", "edit", "me", "D. Heilig")
-	t.Chdir(t.TempDir()) // a process cannot delete its own working directory on Windows
-	removeAll(t, b)
+	t.Chdir(t.TempDir())
 
 	out := mustRun(t, book, "sync")
 	if !strings.Contains(out, "synced "+a) || !strings.Contains(out, "dropped "+b) {
@@ -406,15 +401,15 @@ func TestUnuseKeepsForeignSSHCommand(t *testing.T) {
 func TestReposListAndForget(t *testing.T) {
 	isolate(t)
 	book, _ := seed(t)
-	ok, gone, bare, dangling := newRepo(t), newRepo(t), newRepo(t), newRepo(t)
-	for _, r := range []string{ok, gone, bare, dangling} {
+	ok, bare, dangling := newRepo(t), newRepo(t), newRepo(t)
+	for _, r := range []string{ok, bare, dangling} {
 		t.Chdir(r)
 		mustRun(t, book, "use", "work")
 	}
+	gone := vanishedRepo(t, book)
 	gitRun(t, bare, "config", "--local", "--unset", "id.identity")
 	gitRun(t, dangling, "config", "--local", "id.identity", "nope")
 	t.Chdir(t.TempDir())
-	removeAll(t, gone)
 
 	out := mustRun(t, book, "repos", "ls")
 	for repo, want := range map[string]string{ok: "work  ok", gone: "missing", bare: "no-identity", dangling: "nope  unknown-identity"} {

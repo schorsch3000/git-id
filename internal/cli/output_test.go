@@ -147,11 +147,7 @@ func TestActionCommandsPrintJSON(t *testing.T) {
 		t.Error("-q with --json accepted")
 	}
 
-	gone := newRepo(t)
-	t.Chdir(gone)
-	mustRun(t, book, "use", "work")
-	t.Chdir(repo)
-	removeAll(t, gone)
+	gone := vanishedRepo(t, book)
 	s := decode[syncResult](t, mustRun(t, book, "sync", "--json"))
 	if len(s.Repositories) != 2 {
 		t.Fatalf("sync = %+v", s)
