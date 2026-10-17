@@ -75,6 +75,9 @@ step ` + h.bare + `
 step ` + h.bare + `
 step ` + h.withID + `
 step ` + h.bare + `
+export GIT_SSH_COMMAND=ssh
+step ` + h.plain + `
+step ` + h.withID + `
 `
 	out, err := h.run(h.home, "bash", "-c", script)
 	if err != nil {
@@ -84,6 +87,7 @@ step ` + h.bare + `
 		t.Errorf("hook not registered exactly once:\n%s", out)
 	}
 	n := nagCounts(out)
+	checkOverride(t, h, out)
 	if n[h.plain] != 0 || n[h.withID] != 0 {
 		t.Errorf("nagged where it must not: %v\n%s", n, out)
 	}
@@ -106,6 +110,9 @@ step ` + h.bare + `
 step ` + h.withID + `
 step ` + h.plain + `
 step ` + h.bare + `
+export GIT_SSH_COMMAND=ssh
+step ` + h.plain + `
+step ` + h.withID + `
 `
 	out, err := h.run(h.home, "zsh", "-f", "-c", script)
 	if err != nil {
@@ -115,6 +122,7 @@ step ` + h.bare + `
 		t.Errorf("hook not registered in chpwd_functions:\n%s", out)
 	}
 	n := nagCounts(out)
+	checkOverride(t, h, out)
 	if n[h.plain] != 0 || n[h.withID] != 0 {
 		t.Errorf("nagged where it must not: %v\n%s", n, out)
 	}
@@ -139,12 +147,16 @@ step ` + h.bare + `
 step ` + h.withID + `
 step ` + h.plain + `
 step ` + h.bare + `
+set -gx GIT_SSH_COMMAND ssh
+step ` + h.plain + `
+step ` + h.withID + `
 `
 	out, err := h.run(h.home, "fish", "--no-config", "-c", script)
 	if err != nil {
 		t.Fatalf("fish: %v\n%s", err, out)
 	}
 	n := nagCounts(out)
+	checkOverride(t, h, out)
 	if n[h.plain] != 0 || n[h.withID] != 0 {
 		t.Errorf("nagged where it must not: %v\n%s", n, out)
 	}
@@ -182,5 +194,25 @@ func TestHooksSilentWithoutBinary(t *testing.T) {
 				t.Errorf("nagged although git-id is not installed:\n%s", out)
 			}
 		})
+	}
+}
+
+// checkOverride expects exactly one $GIT_SSH_COMMAND warning: the second visit
+// of the repository that has an identity, made with the variable exported.
+func checkOverride(t *testing.T, h *hookEnv, out string) {
+	t.Helper()
+	counts := map[string]int{}
+	var cur string
+	for _, l := range strings.Split(out, "\n") {
+		if dir, ok := strings.CutPrefix(l, "== "); ok {
+			cur = dir
+			continue
+		}
+		if cur != "" && strings.Contains(l, "GIT_SSH_COMMAND is set") {
+			counts[cur]++
+		}
+	}
+	if counts[h.withID] != 1 || counts[h.bare] != 0 || counts[h.plain] != 0 {
+		t.Errorf("$GIT_SSH_COMMAND warnings per directory = %v, want exactly one in %s\n%s", counts, h.withID, out)
 	}
 }

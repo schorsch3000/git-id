@@ -4,6 +4,7 @@ package repo
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -89,3 +90,11 @@ func Use(bookPath string, b *store.Book, label, dir string, force bool) (string,
 	}
 	return top, nil
 }
+
+// SSHOverrideWarning is shown when $GIT_SSH_COMMAND is set: git prefers it
+// over core.sshCommand, so the key chosen by git-id would be bypassed.
+const SSHOverrideWarning = "warning: $GIT_SSH_COMMAND is set in your environment; git prefers it over " +
+	"core.sshCommand, so git-id's key selection is bypassed. Unset it."
+
+// SSHOverridden reports whether $GIT_SSH_COMMAND overrides git-id's key selection.
+func SSHOverridden() bool { return os.Getenv("GIT_SSH_COMMAND") != "" }

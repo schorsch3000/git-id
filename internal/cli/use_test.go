@@ -250,3 +250,27 @@ func TestInitNothingToImport(t *testing.T) {
 		t.Error("init succeeded without global config")
 	}
 }
+
+func TestWarnsWhenGitSSHCommandOverrides(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+
+	t.Setenv("GIT_SSH_COMMAND", "")
+	if out := mustRun(t, book, "use", "work"); strings.Contains(out, "GIT_SSH_COMMAND") {
+		t.Errorf("warned without the variable set:\n%s", out)
+	}
+
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+	for _, args := range [][]string{{"use", "work"}, {"current"}} {
+		out := mustRun(t, book, args...)
+		if !strings.Contains(out, "GIT_SSH_COMMAND is set") {
+			t.Errorf("git id %v did not warn:\n%s", args, out)
+		}
+	}
+	// The hook relies on `current -q` staying silent.
+	if out := mustRun(t, book, "current", "-q"); out != "" {
+		t.Errorf("quiet current printed %q", out)
+	}
+}

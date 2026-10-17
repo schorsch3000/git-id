@@ -32,6 +32,7 @@ func newUseCmd() *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "using identity %s in %s\n", args[0], top)
+			warnSSHOverride(cmd)
 			return nil
 		},
 	}
@@ -60,6 +61,7 @@ func newCurrentCmd() *cobra.Command {
 				}
 				if !quiet {
 					fmt.Fprintln(cmd.OutOrStdout(), label)
+					warnSSHOverride(cmd)
 				}
 				return nil
 			})
@@ -257,4 +259,11 @@ func newInitCmd() *cobra.Command {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// warnSSHOverride tells the user when $GIT_SSH_COMMAND defeats the identity's key.
+func warnSSHOverride(cmd *cobra.Command) {
+	if repo.SSHOverridden() {
+		fmt.Fprintln(cmd.ErrOrStderr(), repo.SSHOverrideWarning)
+	}
 }

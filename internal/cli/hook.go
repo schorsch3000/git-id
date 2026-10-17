@@ -2,18 +2,29 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	"git-id/internal/repo"
 )
 
 // hintMessage is what the shell hook prints when a repository has no identity.
 const hintMessage = "git-id: no identity set for this repository. Run: git id use <identity>   (git id ls lists them)"
 
-// The hooks only call git-id when the directory contains .git, and only
-// complain on exit status 1 (git-id's "no identity" status), so a missing
-// git-id binary (127) stays silent.
+// overrideMessage is printed when the repository has an identity but
+// $GIT_SSH_COMMAND, which git prefers over core.sshCommand, is set.
+const overrideMessage = "git-id: " + repo.SSHOverrideWarning
 
-const bashHook = `# git-id: remind when entering a git repository without an identity.
+// shellOverride is overrideMessage escaped for use inside double quotes.
+var shellOverride = strings.ReplaceAll(overrideMessage, "$", `\$`)
+
+// The hooks only call git-id when the directory contains .git. Exit status 1
+// of "git-id current -q" means "no identity"; a missing git-id binary (127)
+// stays silent. With an identity set (status 0) they also check the
+// environment for $GIT_SSH_COMMAND.
+
+var bashHook = `# git-id: remind when entering a git repository without an identity.
 __git_id_last=
 __git_id_hook() {
     [ "$PWD" = "$__git_id_last" ] && return 0
@@ -21,7 +32,12 @@ __git_id_hook() {
     [ -e .git ] || return 0
     command -v git-id >/dev/null 2>&1 || return 0
     git-id current -q 2>/dev/null
-    [ $? -eq 1 ] && echo "` + hintMessage + `" >&2
+    local rc=$?
+    if [ $rc -eq 1 ]; then
+        echo "` + hintMessage + `" >&2
+    elif [ $rc -eq 0 ] && [ -n "${GIT_SSH_COMMAND-}" ]; then
+        echo "` + shellOverride + `" >&2
+    fi
     return 0
 }
 if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
@@ -31,12 +47,17 @@ else
 fi
 `
 
-const zshHook = `# git-id: remind when entering a git repository without an identity.
+var zshHook = `# git-id: remind when entering a git repository without an identity.
 __git_id_hook() {
     [[ -e .git ]] || return 0
     (( $+commands[git-id] )) || return 0
     git-id current -q 2>/dev/null
-    [[ $? -eq 1 ]] && print -u2 -- "` + hintMessage + `"
+    local rc=$?
+    if [[ $rc -eq 1 ]]; then
+        print -u2 -- "` + hintMessage + `"
+    elif [[ $rc -eq 0 && -n "${GIT_SSH_COMMAND-}" ]]; then
+        print -u2 -- "` + shellOverride + `"
+    fi
     return 0
 }
 autoload -Uz add-zsh-hook
@@ -44,13 +65,16 @@ add-zsh-hook chpwd __git_id_hook
 __git_id_hook
 `
 
-const fishHook = `# git-id: remind when entering a git repository without an identity.
+var fishHook = `# git-id: remind when entering a git repository without an identity.
 function __git_id_hook --on-variable PWD
     test -e .git; or return 0
     command -q git-id; or return 0
     git-id current -q 2>/dev/null
-    if test $status -eq 1
+    set -l rc $status
+    if test $rc -eq 1
         echo "` + hintMessage + `" >&2
+    else if test $rc -eq 0; and test -n "$GIT_SSH_COMMAND"
+        echo "` + shellOverride + `" >&2
     end
 end
 __git_id_hook

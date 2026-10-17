@@ -384,3 +384,12 @@ func TestBrokenReferenceIsShown(t *testing.T) {
 		t.Errorf("view:\n%s", m.View())
 	}
 }
+
+func TestUseWarnsWhenGitSSHCommandOverrides(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+	press(t, m, "enter")
+	if m.statusErr || !strings.Contains(m.status, "using identity work") || !strings.Contains(m.status, "GIT_SSH_COMMAND") {
+		t.Errorf("status %q (err=%v)", m.status, m.statusErr)
+	}
+}

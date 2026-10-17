@@ -256,7 +256,11 @@ func (m *Model) useCurrent() {
 		return
 	}
 	m.refreshRepo()
-	m.setStatus(fmt.Sprintf("using identity %s in %s", it.label, top), false)
+	msg := fmt.Sprintf("using identity %s in %s", it.label, top)
+	if repo.SSHOverridden() {
+		msg += "  -  " + repo.SSHOverrideWarning
+	}
+	m.setStatus(msg, false)
 }
 
 func (m *Model) askDelete() {
