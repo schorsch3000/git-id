@@ -22,6 +22,26 @@ jobs:
       - run: make fmt-check vet
       - run: make test
 
+  # Run the tests on macOS and Windows too. The tests were written on Linux:
+  # tools that are not there (fish, bash-completion, git-filter-repo) make the
+  # tests that need them skip, and on Windows the end-to-end tests skip as they
+  # need POSIX shells. The Windows job does not fail the workflow yet, so the
+  # first runs can show what is left; drop continue-on-error once it is green.
+  test-other-os:
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
   # Compile every release target, so a platform-specific break shows up in a
   # pull request and not only when a release is cut.
   cross-compile:

@@ -68,6 +68,8 @@ address book and runs `ssh -i <key> -o IdentitiesOnly=yes ...`. Editing a key
 therefore takes effect immediately, without `sync`; names and emails are plain
 repository config and need `sync`.
 
+The address book lives in `$XDG_CONFIG_HOME/git-id/book.toml`, by default `~/.config/git-id/book.toml` (`%AppData%\git-id\book.toml` on Windows).
+
 If your address book is not at the default location
 (`$XDG_CONFIG_HOME/git-id/book.toml`, chosen with `--book` or `$GIT_ID_BOOK`),
 its path is pinned in that command.

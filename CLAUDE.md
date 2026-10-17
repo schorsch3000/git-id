@@ -12,7 +12,7 @@ Early development. Repo holds the design (`idea.md`), `Dockerfile.az` (the dev e
 
 # Decisions
 - Language: Go (module `git-id`). CLI with `cobra`, TUI with `bubbletea`/`bubbles`/`lipgloss`.
-- Address book: single TOML file at `$XDG_CONFIG_HOME/git-id/book.toml`.
+- Address book: single TOML file at `$XDG_CONFIG_HOME/git-id/book.toml`, falling back to `~/.config/git-id/book.toml` (macOS too) and `%AppData%\git-id\book.toml` on Windows (`store.DefaultPath`).
 - Identities store labels referencing datapoints, never copies. Deleting a datapoint still in use is refused unless `--force`.
 - Applying an identity (`git id use`): repo-local `user.name`, `user.email`, `id.identity` (label), and `core.sshCommand = git id ssh ...`, a thin wrapper that resolves the key from the address book at run time, so key changes propagate. When the book is not at the default path the command is `GIT_ID_BOOK='<path>' git id ssh <id>` (git runs it in a shell that knows neither `--book` nor the caller's env); `repo.IsOurSSHCommand` recognises both forms. Name/email changes propagate via `git id sync`.
 - Tests use a throwaway `HOME` / `GIT_CONFIG_GLOBAL`, never the real git config.
@@ -44,7 +44,7 @@ Early development. Repo holds the design (`idea.md`), `Dockerfile.az` (the dev e
 - Listings/JSON: `internal/cli/output.go` (`--json` on every `ls`/`show`/`repos ls` and on `use`, `unuse`, `current` (exclusive with `-q`), `sync` (still exits non-zero on failures), `init`, identity `rename`, datapoint `rm`; result structs live there; errors stay plain on stderr; empty lists print `[]`; `fingerprint()` reads the stored public key file with x/crypto/ssh). `rename` exists for datapoints (`store.RenameDatapoint`, identities follow) and identities (`repo.Relabel` fixes tracked repos). `unuse` and `repos ls|forget` live in `internal/cli/repos.go`.
 - Man pages: `tools/genman` (cobra/doc, kept out of the binary) writes `git-id.1` and one page per command; `make man`/`install`/`release` ship them. `git id --help` makes git run `man git-id` (only when `--help` directly follows `id`); `e2e/man_test.go` checks the requested page name with a recording viewer, so no `man` install is needed.
 - Cleanup and signatures: git filter-repo drops the signature of every commit it rewrites, signed commits of other authors included (their hashes change); `cleanup` counts signed commits (`cleanup.CountSigned`, raw log, no verification) and warns. Checked on a 30000 commit history: about 2 s.
-- CI: `.github/workflows/ci.yml` (fmt, vet, tests with all shells installed, cross-compile matrix) and `release.yml` (tag `v*` runs `make release` and uploads `dist/*`); YAML validated, never run on a runner. `README.md` is the user documentation, `LICENSE` is MIT.
+- CI: `.github/workflows/ci.yml` (fmt, vet, tests with all shells installed on Linux; `test-other-os` runs `go vet`/`go test` on macOS and Windows, where tools that are missing make tests skip, the e2e tests skip on Windows, and the Windows job is `continue-on-error` until a first green run; cross-compile matrix) and `release.yml` (tag `v*` runs `make release` and uploads `dist/*`); YAML validated, never run on a runner. `README.md` is the user documentation, `LICENSE` is MIT.
 
 # Design intent (from idea.md)
 `git-id`: git identity tool. Problem: one user, multiple names, email addresses and SSH keys across different git contexts.
