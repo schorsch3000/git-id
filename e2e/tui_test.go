@@ -133,3 +133,29 @@ func TestTUIKeyPicker(t *testing.T) {
 		t.Errorf("key not added through the picker, key ls:\n%s", out)
 	}
 }
+
+// TestTUIRenameAndFilter drives the label field of the edit form and the list
+// filter in a real terminal.
+func TestTUIRenameAndFilter(t *testing.T) {
+	requireShell(t, "zsh")
+	e := completionEnv(t)
+	repo := e.newRepo(t, "renamerepo", "ssh://x/y.git")
+
+	runTUI(t, e, repo, []tuiStep{
+		{nil, "id-one"},
+		// names tab, edit nm-one, focus the label field, replace the label
+		{[]string{"l", "e", "\x1b[A", "\x7f", "\x7f", "\x7f", "\x7f", "\x7f", "\x7f", "renamed", "\x13"}, "renamed from nm-one"},
+		// emails tab: filter for the second email
+		{[]string{"l", "/", "two", "\r"}, "clear filter"}, // the footer offers esc once a filter is active
+	})
+
+	if out := e.gid(t, e.home, "name", "ls"); !strings.Contains(out, "renamed") || strings.Contains(out, "nm-one") {
+		t.Errorf("name not renamed through the TUI:\n%s", out)
+	}
+	if out := e.gid(t, e.home, "show", "id-one"); !strings.Contains(out, "Dirk") {
+		t.Errorf("identity broke after the rename:\n%s", out)
+	}
+	if got := e.gid(t, e.home, "ls", "--json"); !strings.Contains(got, `"name": "renamed"`) {
+		t.Errorf("identity does not follow the renamed name:\n%s", got)
+	}
+}

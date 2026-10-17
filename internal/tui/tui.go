@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -48,6 +49,7 @@ const (
 	modeForm
 	modeConfirm
 	modePicker
+	modeFilter
 )
 
 type item struct{ label, desc string }
@@ -66,6 +68,7 @@ var (
 	keySty    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("14")) // a key you can press
 	errSty    = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 	okSty     = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+	warnSty   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
 )
 
 // Model is the bubbletea model.
@@ -77,16 +80,19 @@ type Model struct {
 	inRepo    bool
 	repoLabel string // identity of the current repository, if any
 
-	tab     tab
-	cursor  [numTabs]int
-	mode    mode
-	form    *form
-	confirm *confirmation
-	picker  *picker
-	sshDir  string // where the key picker looks (default ~/.ssh)
+	tab      tab
+	cursor   [numTabs]int
+	mode     mode
+	form     *form
+	confirm  *confirmation
+	picker   *picker
+	filter   string          // narrows the list of the current tab (case-insensitive substring)
+	filterIn textinput.Model // the input behind filter while it is being typed
+	sshDir   string          // where the key picker looks (default ~/.ssh)
 
 	status    string
 	statusErr bool
+	warn      string // shown below the status in yellow, e.g. $GIT_SSH_COMMAND overriding the key
 	quitting  bool
 }
 
@@ -123,8 +129,24 @@ func (m *Model) refreshRepo() {
 
 func (m *Model) Init() tea.Cmd { return nil }
 
-// items lists the entries of the current tab.
+// items lists the entries of the current tab that match the filter.
 func (m *Model) items() []item {
+	all := m.allItems()
+	if m.filter == "" {
+		return all
+	}
+	needle := strings.ToLower(m.filter)
+	var out []item
+	for _, it := range all {
+		if strings.Contains(strings.ToLower(it.label+" "+it.desc), needle) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// allItems lists every entry of the current tab.
+func (m *Model) allItems() []item {
 	b := m.book
 	var out []item
 	switch m.tab {
@@ -177,7 +199,7 @@ func (m *Model) clampCursor() {
 	}
 }
 
-func (m *Model) setStatus(msg string, isErr bool) { m.status, m.statusErr = msg, isErr }
+func (m *Model) setStatus(msg string, isErr bool) { m.status, m.statusErr, m.warn = msg, isErr, "" }
 
 // commit reloads the book from disk, applies fn and saves it, so edits made
 // by the CLI in the meantime are not overwritten.
@@ -213,6 +235,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateConfirm(key)
 	case modePicker:
 		m.updatePicker(key)
+	case modeFilter:
+		m.updateFilter(key)
 	default:
 		return m.updateList(key)
 	}
@@ -227,8 +251,15 @@ func (m *Model) updateList(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "left", "h", "shift+tab":
 		m.tab = (m.tab + numTabs - 1) % numTabs
+		m.filter = ""
 	case "right", "l", "tab":
 		m.tab = (m.tab + 1) % numTabs
+		m.filter = ""
+	case "/":
+		m.openFilter()
+	case "esc":
+		m.filter = ""
+		m.clampCursor()
 	case "up", "k":
 		if m.cursor[m.tab] > 0 {
 			m.cursor[m.tab]--
@@ -267,11 +298,10 @@ func (m *Model) useCurrent() {
 		return
 	}
 	m.refreshRepo()
-	msg := fmt.Sprintf("using identity %s in %s", it.label, top)
+	m.setStatus(fmt.Sprintf("using identity %s in %s", it.label, top), false)
 	if repo.SSHOverridden() {
-		msg += "  -  " + repo.SSHOverrideWarning
+		m.warn = repo.SSHOverrideWarning
 	}
-	m.setStatus(msg, false)
 }
 
 func (m *Model) askDelete() {
@@ -335,10 +365,9 @@ func (m *Model) openForm(add bool) {
 		title = fmt.Sprintf("Edit %s %s", t.noun(), cur.label)
 		target = cur.label
 	}
-	var fields []field
-	if add {
-		fields = append(fields, textField("label", ""))
-	}
+	// The label comes first; when editing it can be changed to rename, and the
+	// focus starts on the first field after it.
+	fields := []field{textField("label", cur.label)}
 	switch t {
 	case tabIdentities:
 		names, emails, keys := b.Labels(store.KindName), b.Labels(store.KindEmail), b.Labels(store.KindKey)
@@ -360,6 +389,9 @@ func (m *Model) openForm(add bool) {
 		fields = append(fields, textField("private", k.Private), textField("public", k.Public))
 	}
 	m.form = newForm(title, target, fields...)
+	if !add {
+		m.form.setFocus(1)
+	}
 	m.mode = modeForm
 }
 
@@ -376,13 +408,14 @@ func (m *Model) updateForm(key tea.KeyMsg) {
 	if !m.form.key(key) {
 		return
 	}
+	old := m.form.target
 	label, err := m.submit()
 	if err != nil {
 		m.form.err = err.Error()
 		return
 	}
-	verb := "added"
-	if m.form.target != "" {
+	verb, renamed := "added", old != "" && label != old
+	if old != "" {
 		verb = "saved"
 	}
 	m.mode, m.form = modeList, nil
@@ -391,18 +424,39 @@ func (m *Model) updateForm(key tea.KeyMsg) {
 			m.cursor[m.tab] = i
 		}
 	}
-	m.setStatus(fmt.Sprintf("%s %s %s", verb, m.tab.noun(), label), false)
+	msg := fmt.Sprintf("%s %s %s", verb, m.tab.noun(), label)
+	if renamed {
+		msg += " (renamed from " + old + ")"
+	}
+	// Repositories that use a renamed identity point at the old label.
+	if renamed && m.tab == tabIdentities {
+		if _, err := repo.Relabel(m.path, old, label); err != nil {
+			m.setStatus(msg+"; updating repositories failed: "+err.Error(), true)
+			return
+		}
+		m.refreshRepo()
+	}
+	m.setStatus(msg, false)
 }
 
-// submit applies the open form to the book and returns the affected label.
+// submit applies the open form to the book and returns the affected label. An
+// edit with a changed label renames first, so identities follow.
 func (m *Model) submit() (string, error) {
 	f := m.form
 	adding := f.target == ""
-	label := f.target
-	if adding {
-		label = f.get("label")
-	}
+	label := f.get("label")
 	return label, m.commit(func(b *store.Book) error {
+		if !adding && label != f.target {
+			var err error
+			if m.tab == tabIdentities {
+				err = b.RenameIdentity(f.target, label)
+			} else {
+				err = b.RenameDatapoint(m.tab.kind(), f.target, label)
+			}
+			if err != nil {
+				return err
+			}
+		}
 		switch m.tab {
 		case tabIdentities:
 			id := store.Identity{Name: f.get("name"), Email: f.get("email"), Key: f.get("key")}
@@ -461,6 +515,12 @@ func (m *Model) View() string {
 		}
 	}
 	sb.WriteString("\n\n")
+	switch {
+	case m.mode == modeFilter:
+		sb.WriteString(keySty.Render("/") + " " + m.filterIn.View() + "\n\n")
+	case m.filter != "" && m.mode == modeList:
+		sb.WriteString(dimSty.Render("filter: ") + m.filter + "\n\n")
+	}
 
 	switch m.mode {
 	case modeForm:
@@ -481,12 +541,18 @@ func (m *Model) View() string {
 		}
 		sb.WriteString(sty.Render(m.status) + "\n")
 	}
+	if m.warn != "" {
+		sb.WriteString(warnSty.Render(m.warn) + "\n")
+	}
 	sb.WriteString(renderHints(m.hints()) + "\n")
 	return sb.String()
 }
 
 func (m *Model) viewList() string {
 	items := m.items()
+	if len(items) == 0 && m.filter != "" {
+		return dimSty.Render(fmt.Sprintf("(no %s match %q)", m.tab.plural(), m.filter)) + "\n"
+	}
 	if len(items) == 0 {
 		return dimSty.Render(fmt.Sprintf("(no %s, press ", m.tab.plural())) + keySty.Render("a") + dimSty.Render(" to add one)") + "\n"
 	}
@@ -546,10 +612,15 @@ func (m *Model) hints() []hint {
 		return []hint{{"tab/shift+tab", "field"}, choose, {"enter", "next/save"}, {"ctrl+s", "save"}, {"esc", "cancel"}}
 	case modePicker:
 		return []hint{{"↑/↓", "move"}, {"enter", "choose"}, {"esc", "back to the form"}}
+	case modeFilter:
+		return []hint{{"enter", "keep filter"}, {"esc", "clear filter"}}
 	case modeConfirm:
 		return []hint{{"y", "confirm"}, {"any other key", "cancels"}}
 	}
-	h := []hint{{"←/→", "tab"}, {"↑/↓", "move"}}
+	h := []hint{{"←/→", "tab"}, {"↑/↓", "move"}, {"/", "filter"}}
+	if m.filter != "" {
+		h = append(h, hint{"esc", "clear filter"})
+	}
 	if m.tab == tabIdentities {
 		h = append(h, hint{"enter", "use here"})
 	}
@@ -628,6 +699,9 @@ func (m *Model) viewPicker() string {
 		if k.Public == "" {
 			line = fmt.Sprintf("%-*s  (no .pub file)", width, k.Name)
 		}
+		if k.Encrypted {
+			line += "  (passphrase)"
+		}
 		if labels := m.keyLabelsFor(k.Path); len(labels) > 0 {
 			line += "  [in address book: " + strings.Join(labels, ", ") + "]"
 		}
@@ -657,4 +731,32 @@ func (t tab) plural() string {
 		return "identities"
 	}
 	return t.noun() + "s"
+}
+
+func (m *Model) openFilter() {
+	in := textinput.New()
+	in.Prompt = ""
+	in.CharLimit = 80
+	in.Width = 40
+	in.SetValue(m.filter)
+	in.CursorEnd()
+	in.Focus()
+	m.filterIn = in
+	m.mode = modeFilter
+}
+
+// updateFilter narrows the list while typing; enter keeps the filter, esc drops it.
+func (m *Model) updateFilter(key tea.KeyMsg) {
+	switch key.String() {
+	case "esc":
+		m.filter = ""
+		m.mode = modeList
+	case "enter":
+		m.mode = modeList
+	default:
+		m.filterIn, _ = m.filterIn.Update(key)
+		m.filter = m.filterIn.Value()
+		m.cursor[m.tab] = 0
+	}
+	m.clampCursor()
 }

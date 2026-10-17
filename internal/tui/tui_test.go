@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -396,8 +397,32 @@ func TestUseWarnsWhenGitSSHCommandOverrides(t *testing.T) {
 	m, _ := fixture(t, newRepo(t))
 	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
 	press(t, m, "enter")
-	if m.statusErr || !strings.Contains(m.status, "using identity work") || !strings.Contains(m.status, "GIT_SSH_COMMAND") {
+	if m.statusErr || !strings.Contains(m.status, "using identity work") || strings.Contains(m.status, "GIT_SSH_COMMAND") {
 		t.Errorf("status %q (err=%v)", m.status, m.statusErr)
+	}
+	if !strings.Contains(m.warn, "GIT_SSH_COMMAND is set") || !strings.Contains(m.View(), m.warn) {
+		t.Errorf("warning %q not shown:\n%s", m.warn, m.View())
+	}
+	press(t, m, "down") // any further key clears it
+	if m.warn != "" {
+		t.Errorf("warning survived the next key: %q", m.warn)
+	}
+}
+
+func TestSSHWarningIsYellowAndNotRed(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+	withColor(t)
+	press(t, m, "enter")
+	v := m.View()
+	if !strings.Contains(v, warnSty.Render(idrepo.SSHOverrideWarning)) {
+		t.Errorf("warning is not highlighted yellow:\n%q", v)
+	}
+	if strings.Contains(v, errSty.Render(idrepo.SSHOverrideWarning)) {
+		t.Errorf("warning is red:\n%q", v)
+	}
+	if !strings.Contains(v, okSty.Render("using identity work in")) && !strings.Contains(ansiSeq.ReplaceAllString(v, ""), "using identity work in") {
+		t.Errorf("success status missing:\n%q", v)
 	}
 }
 
@@ -432,9 +457,20 @@ func sshDirFixture(t *testing.T) (dir, ed, edPub, fingerprint string) {
 	write("known_hosts", "github.com ssh-ed25519 AAAA...\n")
 	write("config", "Host *\n  IdentitiesOnly yes\n")
 	write("notes.txt", "-----BEGIN something else-----\n")
-	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+	// A passphrase protected key, one a level down, one too deep to be found.
+	enc, err := ssh.MarshalPrivateKeyWithPassphrase(privKey, "", []byte("secret"))
+	if err != nil {
 		t.Fatal(err)
 	}
+	write("id_secret", string(pem.EncodeToMemory(enc)))
+	for _, sub := range []string{"sub", filepath.Join("deep", "er", "est")} {
+		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("sub/id_work", string(pem.EncodeToMemory(block)))
+	write("deep/er/est/id_toodeep", string(pem.EncodeToMemory(block)))
+	write("sub/notes.txt", "not a key\n")
 	return dir, ed, edPub, ssh.FingerprintSHA256(sp)
 }
 
@@ -444,8 +480,21 @@ func TestDiscoverKeysFindsOnlyPrivateKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 2 || keys[0].Name != "id_ed25519" || keys[1].Name != "id_rsa" {
-		t.Fatalf("keys = %+v", keys)
+	var names []string
+	for _, k := range keys {
+		names = append(names, k.Name)
+	}
+	want := []string{"id_ed25519", "id_rsa", "id_secret", "sub/id_work"} // not deep/er/est/id_toodeep
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("keys = %v, want %v", names, want)
+	}
+	for _, k := range keys {
+		if k.Encrypted != (k.Name == "id_secret") {
+			t.Errorf("%s: Encrypted = %v", k.Name, k.Encrypted)
+		}
+	}
+	if keys[3].Path != filepath.Join(dir, "sub", "id_work") {
+		t.Errorf("path of the nested key = %q", keys[3].Path)
 	}
 	if keys[0].Path != ed || keys[0].Public != edPub || keys[0].Fingerprint != fp {
 		t.Errorf("id_ed25519 = %+v, want public %s fingerprint %s", keys[0], edPub, fp)
@@ -460,7 +509,7 @@ func TestDiscoverKeysFindsOnlyPrivateKeys(t *testing.T) {
 
 func TestSuggestLabel(t *testing.T) {
 	for in, want := range map[string]string{
-		"id_ed25519": "ed25519", "id_work": "work", "deploy key": "deploy-key",
+		"id_ed25519": "ed25519", "id_work": "work", "deploy key": "deploy-key", "sub/id_work": "work", "a/b/c": "c",
 		"github.pem": "github.pem", "id_": "", "---": "", "": "",
 	} {
 		if got := suggestLabel(in); got != want {
@@ -483,12 +532,12 @@ func TestPickKeyFillsTheForm(t *testing.T) {
 		t.Fatalf("mode = %v, want picker", m.mode)
 	}
 	v := m.View()
-	for _, want := range []string{dir, "id_ed25519", fp, "id_rsa", "(no .pub file)"} {
+	for _, want := range []string{dir, "id_ed25519", fp, "id_rsa", "(no .pub file)", "id_secret", "(passphrase)", "sub/id_work"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("picker lacks %q:\n%s", want, v)
 		}
 	}
-	for _, unwanted := range []string{"lonely", "known_hosts", "config", "notes.txt", "sub"} {
+	for _, unwanted := range []string{"lonely", "known_hosts", "config", "notes.txt", "toodeep"} {
 		if strings.Contains(v, unwanted) {
 			t.Errorf("picker lists %q:\n%s", unwanted, v)
 		}
@@ -651,11 +700,11 @@ func TestKeyHintsAreHighlighted(t *testing.T) {
 	if keySty.Render("a") == "a" {
 		t.Fatal("test setup: styles produce no colour")
 	}
-	check("identities", []string{"←/→", "↑/↓", "enter", "a", "e", "d", "q"},
-		"←/→ tab  ↑/↓ move  enter use here  a add  e edit  d delete  q quit")
+	check("identities", []string{"←/→", "↑/↓", "/", "enter", "a", "e", "d", "q"},
+		"←/→ tab  ↑/↓ move  / filter  enter use here  a add  e edit  d delete  q quit")
 
 	press(t, m, "l")
-	check("names", []string{"←/→", "↑/↓", "a", "e", "d", "q"}, "←/→ tab  ↑/↓ move  a add  e edit  d delete  q quit")
+	check("names", []string{"←/→", "↑/↓", "/", "a", "e", "d", "q"}, "←/→ tab  ↑/↓ move  / filter  a add  e edit  d delete  q quit")
 
 	press(t, m, "a")
 	check("name form", []string{"tab/shift+tab", "←/→", "enter", "ctrl+s", "esc"},
@@ -682,5 +731,162 @@ func TestKeyHintsAreHighlighted(t *testing.T) {
 	m.tab = tabKeys
 	if v := m.View(); !strings.Contains(v, keySty.Render("a")) || !strings.Contains(plain(), "(no keys, press a to add one)") {
 		t.Errorf("empty-list hint:\n%q", v)
+	}
+}
+
+// clearAndType empties the focused text field and types s.
+func clearAndType(t *testing.T, m *Model, current, s string) {
+	t.Helper()
+	for range current {
+		m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	press(t, m, s)
+}
+
+func TestRenameThroughTheEditForm(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	press(t, m, "l", "e", "up") // names tab, edit "me", focus the label field
+	if m.form.get("label") != "me" || m.form.focus != 0 {
+		t.Fatalf("label field: %q, focus %d", m.form.get("label"), m.form.focus)
+	}
+	clearAndType(t, m, "me", "dirk")
+	press(t, m, "ctrl+s")
+	b := reload(t, m)
+	if _, old := b.Names["me"]; old || b.Names["dirk"] != "Dirk Heilig" {
+		t.Errorf("names = %v", b.Names)
+	}
+	if got := b.Identities["work"].Name; got != "dirk" {
+		t.Errorf("identity work still points at %q", got)
+	}
+	if !strings.Contains(m.status, "saved name dirk (renamed from me)") {
+		t.Errorf("status %q", m.status)
+	}
+	if it, _ := m.current(); it.label != "dirk" {
+		t.Errorf("cursor on %q after the rename", it.label)
+	}
+}
+
+func TestRenamingAnIdentityUpdatesTheRepository(t *testing.T) {
+	repo := newRepo(t)
+	m, _ := fixture(t, repo)
+	press(t, m, "enter") // use work here
+	press(t, m, "e", "up")
+	clearAndType(t, m, "work", "company")
+	press(t, m, "ctrl+s")
+	if got := gitRun(t, repo, "config", "--local", "id.identity"); got != "company" {
+		t.Errorf("id.identity = %q", got)
+	}
+	if got := gitRun(t, repo, "config", "--local", "core.sshCommand"); got != idrepo.SSHCommand(m.path, "company") {
+		t.Errorf("core.sshCommand = %q", got)
+	}
+	if m.repoLabel != "company" || !strings.Contains(m.View(), "this repository uses company") {
+		t.Errorf("header not refreshed: %q\n%s", m.repoLabel, m.View())
+	}
+}
+
+func TestRenameRefusals(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	press(t, m, "l", "l", "e", "up") // emails: priv, work -> cursor on priv
+	clearAndType(t, m, "priv", "work")
+	press(t, m, "ctrl+s")
+	if m.mode != modeForm || !strings.Contains(m.form.err, "already exists") {
+		t.Errorf("collision: mode %v err %q", m.mode, m.form.err)
+	}
+	clearAndType(t, m, "work", "bad label")
+	press(t, m, "ctrl+s")
+	if m.mode != modeForm || !strings.Contains(m.form.err, "invalid label") {
+		t.Errorf("invalid label: mode %v err %q", m.mode, m.form.err)
+	}
+	clearAndType(t, m, "bad label", "")
+	press(t, m, "ctrl+s")
+	if m.mode != modeForm || m.form.err == "" {
+		t.Errorf("empty label accepted: mode %v", m.mode)
+	}
+	if _, ok := reload(t, m).Emails["priv"]; !ok {
+		t.Error("the email vanished")
+	}
+}
+
+func TestFilter(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	press(t, m, "l", "l") // emails: priv (dirk@example.org), work (dirk@example.com)
+	if !strings.Contains(m.View(), "/ filter") {
+		t.Errorf("filter not advertised:\n%s", m.View())
+	}
+
+	press(t, m, "/", "PRI") // typing narrows live, case-insensitive
+	if m.mode != modeFilter {
+		t.Fatalf("mode %v", m.mode)
+	}
+	if v := m.View(); !strings.Contains(v, "priv") || strings.Contains(v, "example.com") {
+		t.Errorf("filter on the label:\n%s", v)
+	}
+	press(t, m, "enter") // keep it
+	if m.mode != modeList || m.filter != "PRI" {
+		t.Fatalf("mode %v filter %q", m.mode, m.filter)
+	}
+	if v := m.View(); !strings.Contains(v, "filter: PRI") || !strings.Contains(v, "esc clear filter") {
+		t.Errorf("active filter not shown:\n%s", v)
+	}
+	// Actions act on the filtered list: delete asks about priv, not work.
+	press(t, m, "d")
+	if !strings.Contains(m.View(), `Delete email "priv"`) {
+		t.Errorf("delete does not follow the filter:\n%s", m.View())
+	}
+	press(t, m, "n")
+
+	press(t, m, "esc") // clears it from the list
+	if m.filter != "" || !strings.Contains(m.View(), "example.com") {
+		t.Errorf("esc did not clear the filter: %q", m.filter)
+	}
+
+	press(t, m, "/", "example.com") // matches the value too
+	if v := m.View(); !strings.Contains(v, "work") || strings.Contains(v, "example.org") {
+		t.Errorf("filter on the value:\n%s", v)
+	}
+	press(t, m, "esc") // esc while typing clears and leaves
+	if m.mode != modeList || m.filter != "" {
+		t.Errorf("mode %v filter %q", m.mode, m.filter)
+	}
+
+	press(t, m, "/", "zzz", "enter")
+	if !strings.Contains(m.View(), `(no emails match "zzz")`) {
+		t.Errorf("empty result:\n%s", m.View())
+	}
+	press(t, m, "d", "e") // nothing to act on
+	if m.mode != modeList {
+		t.Errorf("an action opened a dialog on an empty result (mode %v)", m.mode)
+	}
+	press(t, m, "right") // switching tabs drops the filter
+	if m.filter != "" {
+		t.Errorf("filter survived a tab switch: %q", m.filter)
+	}
+}
+
+func TestFilterKeepsTheCursorValid(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	press(t, m, "l", "l", "down") // second email selected
+	press(t, m, "/", "priv")
+	if it, ok := m.current(); !ok || it.label != "priv" {
+		t.Errorf("current after filtering = %+v, %v", it, ok)
+	}
+	press(t, m, "enter", "esc", "q") // quitting with a filter set must not panic
+}
+
+func TestPickKeyFromASubdirectoryAndMarkPassphrases(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	dir, _, _, _ := sshDirFixture(t)
+	m.sshDir = dir
+	press(t, m, "l", "l", "l", "a", "ctrl+o", "down", "down", "down", "enter") // sub/id_work
+	if got := m.form.get("private"); got != filepath.Join(dir, "sub", "id_work") {
+		t.Errorf("private = %q", got)
+	}
+	if got := m.form.get("label"); got != "work" {
+		t.Errorf("label suggested from the base name: %q", got)
+	}
+	// Only the passphrase protected key carries the marker.
+	press(t, m, "ctrl+o")
+	if v := m.View(); strings.Count(v, "(passphrase)") != 1 || !strings.Contains(v, "id_secret") {
+		t.Errorf("passphrase marker:\n%s", v)
 	}
 }
