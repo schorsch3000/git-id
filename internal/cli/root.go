@@ -28,6 +28,8 @@ func NewRootCmd() *cobra.Command {
 		newIdentityLsCmd(),
 		newIdentityShowCmd(),
 		newUseCmd(),
+		newUnuseCmd(),
+		newReposCmd(),
 		newCurrentCmd(),
 		newSyncCmd(),
 		newSSHCmd(),

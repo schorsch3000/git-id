@@ -109,6 +109,7 @@ func attachCompletions(root *cobra.Command) {
 		return nil, cobra.ShellCompDirectiveDefault
 	}
 	find("add").ValidArgsFunction = noCompletion
+	find("repos", "forget").ValidArgsFunction = completeRepos
 	for _, n := range []string{"edit", "rename", "rm", "show", "use"} {
 		find(n).ValidArgsFunction = completeIdentities
 	}
@@ -214,4 +215,21 @@ The scripts complete the git-id binary and, for bash, zsh and fish, the ` + "`gi
 			}
 		},
 	}
+}
+
+// completeRepos completes the repositories registered for sync.
+func completeRepos(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	var out []string
+	if path, err := bookPath(cmd); err == nil {
+		dirs, _ := store.LoadRepos(store.RegistryPath(path))
+		for _, d := range dirs {
+			if strings.HasPrefix(d, toComplete) {
+				out = append(out, d)
+			}
+		}
+	}
+	return out, cobra.ShellCompDirectiveNoFileComp
 }

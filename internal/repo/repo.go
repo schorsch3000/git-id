@@ -125,3 +125,36 @@ func Relabel(bookPath, old, new string) ([]string, error) {
 	}
 	return updated, nil
 }
+
+// Unuse takes the identity out of the repository containing dir again: it
+// removes user.name, user.email, id.identity and, if git-id wrote it,
+// core.sshCommand, and unregisters the repository. It returns the repository
+// root and whether a foreign core.sshCommand was left in place.
+func Unuse(bookPath, dir string) (top string, keptForeign bool, err error) {
+	top, err = gitcfg.Toplevel(dir)
+	if err != nil {
+		return "", false, fmt.Errorf("not inside a git repository")
+	}
+	if _, ok, err := Identity(top); err != nil {
+		return "", false, err
+	} else if !ok {
+		return "", false, fmt.Errorf("this repository has no identity")
+	}
+	if cur, ok, err := gitcfg.GetLocal(top, "core.sshCommand"); err != nil {
+		return "", false, err
+	} else if ok {
+		if IsOurSSHCommand(cur) {
+			if err := gitcfg.UnsetLocal(top, "core.sshCommand"); err != nil {
+				return "", false, err
+			}
+		} else {
+			keptForeign = true
+		}
+	}
+	for _, k := range []string{"user.name", "user.email", IdentityKey} {
+		if err := gitcfg.UnsetLocal(top, k); err != nil {
+			return "", false, err
+		}
+	}
+	return top, keptForeign, store.RemoveRepo(store.RegistryPath(bookPath), top)
+}

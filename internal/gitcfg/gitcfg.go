@@ -79,3 +79,14 @@ func UnsetGlobal(key string) error {
 // Git runs an arbitrary git command in dir (empty = current directory) and
 // returns its trimmed stdout.
 func Git(dir string, args ...string) (string, error) { return run(dir, args...) }
+
+// UnsetLocal removes a key from the repository config of dir. A missing key is not an error.
+func UnsetLocal(dir, key string) error {
+	_, err := run(dir, "config", "--local", "--unset-all", key)
+	if err != nil {
+		if code, ok := exitCode(errors.Unwrap(err)); ok && code == 5 {
+			return nil
+		}
+	}
+	return err
+}

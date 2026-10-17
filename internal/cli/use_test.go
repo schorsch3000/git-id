@@ -339,3 +339,92 @@ func TestRenameIdentityUpdatesRepositories(t *testing.T) {
 		t.Error("renaming a missing identity succeeded")
 	}
 }
+
+func TestUnuse(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+
+	if _, err := run(t, book, "unuse"); err == nil {
+		t.Error("unuse without identity succeeded")
+	}
+	mustRun(t, book, "use", "work")
+	out := mustRun(t, book, "unuse")
+	if !strings.Contains(out, "removed the identity from "+repo) {
+		t.Errorf("output:\n%s", out)
+	}
+	for _, k := range []string{"user.name", "user.email", "id.identity", "core.sshCommand"} {
+		if v, err := exec.Command("git", "-C", repo, "config", "--local", k).Output(); err == nil {
+			t.Errorf("%s still set: %s", k, v)
+		}
+	}
+	if _, err := run(t, book, "current", "-q"); err == nil {
+		t.Error("current succeeds after unuse")
+	}
+	if regs, _ := store.LoadRepos(store.RegistryPath(book)); len(regs) != 0 {
+		t.Errorf("repository still registered: %v", regs)
+	}
+	// Using it again works.
+	mustRun(t, book, "use", "work")
+}
+
+func TestUnuseKeepsForeignSSHCommand(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+	mustRun(t, book, "use", "work", "--force")
+	gitRun(t, repo, "config", "core.sshCommand", "ssh -v")
+	out := mustRun(t, book, "unuse")
+	if !strings.Contains(out, "left in place") {
+		t.Errorf("no note about the foreign command:\n%s", out)
+	}
+	if got := gitRun(t, repo, "config", "--local", "core.sshCommand"); got != "ssh -v" {
+		t.Errorf("foreign core.sshCommand = %q", got)
+	}
+	t.Chdir(t.TempDir())
+	if _, err := run(t, book, "unuse"); err == nil {
+		t.Error("unuse outside a repository succeeded")
+	}
+}
+
+func TestReposListAndForget(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	ok, gone, bare, dangling := newRepo(t), newRepo(t), newRepo(t), newRepo(t)
+	for _, r := range []string{ok, gone, bare, dangling} {
+		t.Chdir(r)
+		mustRun(t, book, "use", "work")
+	}
+	gitRun(t, bare, "config", "--local", "--unset", "id.identity")
+	gitRun(t, dangling, "config", "--local", "id.identity", "nope")
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	out := mustRun(t, book, "repos", "ls")
+	for repo, want := range map[string]string{ok: "work  ok", gone: "missing", bare: "no-identity", dangling: "nope  unknown-identity"} {
+		line := lineWith(out, repo)
+		if line == "" || !strings.Contains(line, want) {
+			t.Errorf("repos ls line for %s = %q, want it to contain %q\n%s", repo, line, want, out)
+		}
+	}
+
+	mustRun(t, book, "repos", "forget", gone)
+	if out := mustRun(t, book, "repos", "ls"); strings.Contains(out, gone) {
+		t.Errorf("forgotten repository still listed:\n%s", out)
+	}
+	if _, err := run(t, book, "repos", "forget", gone); err == nil {
+		t.Error("forgetting an untracked repository succeeded")
+	}
+	if got, _ := complete(t, book, "repos", "forget", ""); len(got) != 3 {
+		t.Errorf("completion offers %v, want the 3 tracked repositories", got)
+	}
+	// forgetting leaves the repository configuration alone.
+	mustRun(t, book, "repos", "forget", ok)
+	if got := gitRun(t, ok, "config", "--local", "id.identity"); got != "work" {
+		t.Errorf("forget touched the repository: id.identity = %q", got)
+	}
+}

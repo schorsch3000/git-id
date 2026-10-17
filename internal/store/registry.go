@@ -58,3 +58,18 @@ func AddRepo(path, repo string) error {
 	}
 	return SaveRepos(path, append(repos, repo))
 }
+
+// RemoveRepo unregisters a repository path.
+func RemoveRepo(path, repo string) error {
+	repos, err := LoadRepos(path)
+	if err != nil {
+		return err
+	}
+	kept := repos[:0]
+	for _, r := range repos {
+		if r != repo {
+			kept = append(kept, r)
+		}
+	}
+	return SaveRepos(path, kept)
+}
