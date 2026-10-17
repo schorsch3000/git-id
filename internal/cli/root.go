@@ -10,8 +10,25 @@ var version = "dev"
 // generated completion scripts target the binary, not git itself.
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
-		Use:           "git-id",
-		Short:         "Manage git identities (name, email, ssh key); run as `git id`",
+		Use:   "git-id",
+		Short: "Manage git identities (name, email, ssh key); run as `git id`",
+		Long: `git-id keeps an address book of names, email addresses and ssh keys. An
+identity combines one of each. Using an identity in a repository sets
+user.name and user.email there and points core.sshCommand at git-id, which
+picks the identity's ssh key on every push and fetch. Identities reference
+the address book entries, so changing a name, email or key changes every
+identity that uses it.
+
+Typical use:
+
+  git id init                         import the global name and email
+  git id key add work ~/.ssh/id_work  add more datapoints
+  git id add work --name me --email work-mail --key work
+  git id use work                     in each repository
+  git id sync                         after editing the address book
+  git id tui                          the same interactively
+
+It is installed as git-id, so git runs it as "git id".`,
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		Version:       version,
