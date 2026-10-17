@@ -2,6 +2,9 @@ package cli
 
 import "github.com/spf13/cobra"
 
+// version is set at build time: -ldflags "-X git-id/internal/cli.version=1.2.3".
+var version = "dev"
+
 // NewRootCmd builds the git-id command tree. Invoked as `git id` via git's
 // subcommand lookup for the `git-id` binary. The command is named git-id so
 // generated completion scripts target the binary, not git itself.
@@ -11,6 +14,7 @@ func NewRootCmd() *cobra.Command {
 		Short:         "Manage git identities (name, email, ssh key); run as `git id`",
 		SilenceUsage:  true,
 		SilenceErrors: false,
+		Version:       version,
 	}
 	root.PersistentFlags().String("book", "", "address book file (default $"+bookEnv+" or $XDG_CONFIG_HOME/git-id/book.toml)")
 	root.AddCommand(

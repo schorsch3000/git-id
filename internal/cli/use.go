@@ -3,9 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -154,12 +152,7 @@ func newSSHCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			argv := sshArgv(r, args[1:])
-			bin, err := exec.LookPath(argv[0])
-			if err != nil {
-				return err
-			}
-			return syscall.Exec(bin, argv, os.Environ())
+			return runSSH(sshArgv(r, args[1:]))
 		},
 	}
 }
