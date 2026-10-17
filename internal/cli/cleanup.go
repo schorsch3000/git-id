@@ -126,7 +126,13 @@ func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes bool) error {
 	}
 
 	affected := plan.Affected(commits)
-	fmt.Fprintf(out, "\n%d of %d scanned commits will be rewritten.\n", len(affected), len(commits))
+	fmt.Fprintf(out, "\n%d of %d scanned commits carry a replaced value; they and all their descendants get new hashes.\n", len(affected), len(commits))
+	if signed, err := cleanup.CountSigned(top, ref); err != nil {
+		return err
+	} else if signed > 0 {
+		fmt.Fprintf(out, "WARNING: %d of the %d scanned commits are signed. git filter-repo drops the signature of every commit it rewrites, "+
+			"signed commits of other authors included, and their hashes change too.\n", signed, len(commits))
+	}
 	if pushed, err := cleanup.PushedCount(top, affected); err != nil {
 		return err
 	} else if pushed > 0 {

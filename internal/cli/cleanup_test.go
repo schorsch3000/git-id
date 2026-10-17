@@ -315,3 +315,62 @@ func TestCleanupRefusals(t *testing.T) {
 		}
 	})
 }
+
+// signedCount returns how many of the commits on every ref carry a signature.
+func signedCount(t *testing.T, repo string) int {
+	t.Helper()
+	n := 0
+	for _, h := range strings.Fields(gitRun(t, repo, "rev-list", "--all")) {
+		if strings.Contains(gitRun(t, repo, "cat-file", "commit", h), "\ngpgsig ") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCleanupWithSignedCommits documents what git filter-repo does to signed
+// history and checks that the user is told beforehand.
+func TestCleanupWithSignedCommits(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not available")
+	}
+	book, repo := cleanupFixture(t)
+	t.Chdir(repo)
+	dir := t.TempDir()
+	signKey := filepath.Join(dir, "sign")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", signKey).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v\n%s", err, out)
+	}
+	gitRun(t, repo, "config", "gpg.format", "ssh")
+	gitRun(t, repo, "config", "user.signingkey", signKey+".pub")
+	gitRun(t, repo, "config", "commit.gpgsign", "true")
+	// Two signed commits on top of the fixture's unsigned history: one by the
+	// current identity (unaffected by the cleanup) and one by another identity.
+	commitAs(t, repo, "Dirk Heilig", "dirk@example.com", "signed mine")
+	commitAs(t, repo, "Old Name", "old@example.org", "signed old")
+	if got := signedCount(t, repo); got != 2 {
+		t.Fatalf("setup: %d signed commits, want 2", got)
+	}
+	mineBefore := gitRun(t, repo, "rev-parse", "main~1")
+
+	out := mustRun(t, book, "cleanup", "--yes", "--current-branch")
+	if !strings.Contains(out, "WARNING: 2 of the 6 scanned commits are signed") {
+		t.Errorf("no signature warning:\n%s", out)
+	}
+	if signedCount(t, repo) != 0 {
+		t.Error("signatures survived the rewrite")
+	}
+	if gitRun(t, repo, "rev-parse", "main~1") == mineBefore {
+		t.Error("the signed commit of the current identity kept its hash although its signature was dropped")
+	}
+	if h := gitRun(t, repo, "log", "main", "--format=%an <%ae>"); strings.Contains(h, "Old Name") {
+		t.Errorf("old identity survived:\n%s", h)
+	}
+}
+
+func TestCleanupDoesNotWarnWithoutSignatures(t *testing.T) {
+	book, _ := cleanupFixture(t)
+	if out := mustRun(t, book, "cleanup", "--yes"); strings.Contains(out, "are signed") {
+		t.Errorf("signature warning without signed commits:\n%s", out)
+	}
+}

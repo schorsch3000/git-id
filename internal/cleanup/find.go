@@ -168,3 +168,28 @@ func (p Plan) Affected(commits []Commit) []string {
 	}
 	return out
 }
+
+// CountSigned returns how many commits reachable from ref (all refs if empty)
+// carry a signature. git filter-repo drops the signature of every commit it
+// rewrites, signed commits by other authors included, which also changes
+// their hashes. The raw log is read instead of %G?, which would run a
+// signature verification per commit.
+func CountSigned(dir, ref string) (int, error) {
+	args := []string{"log", "--format=raw"}
+	if ref == "" {
+		args = append(args, "--all")
+	} else {
+		args = append(args, ref)
+	}
+	out, err := gitcfg.Git(dir, args...)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "gpgsig ") || strings.HasPrefix(line, "gpgsig-sha256 ") {
+			n++
+		}
+	}
+	return n, nil
+}
