@@ -96,6 +96,10 @@ the current identity's. You answer per value (yes, no, all remaining names or
 emails, skip the rest, quit). Values that are not in your address book are never
 touched.
 
+Commit messages stay as they are; `--trailers` also replaces the accepted names and
+emails in `Signed-off-by` and `Co-authored-by` lines (lines starting with the key,
+not a sentence that mentions one).
+
 **This rewrites history.** Commit hashes change, signatures of rewritten commits
 are dropped, and by default all branches, tags and remote-tracking refs are
 rewritten (`--current-branch` limits it). It refuses to run with uncommitted

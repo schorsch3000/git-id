@@ -177,3 +177,19 @@ func TestMissingFilterRepoGivesInstallHint(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestTrailerCallback(t *testing.T) {
+	p := NewPlan()
+	p.Add(Finding{Name, `Old "Name"`, 1}, "New Name")
+	p.Add(Finding{Email, "Old@Example.org", 1}, "new@example.org")
+	got := p.trailerCallback()
+	want := `return re.sub(rb"(?m)^((?:Signed-off-by|Co-authored-by): )(.*?) <([^<>\n]*)>", ` +
+		`lambda m: m.group(1) + {b"\x4f\x6c\x64\x20\x22\x4e\x61\x6d\x65\x22": b"\x4e\x65\x77\x20\x4e\x61\x6d\x65"}.get(m.group(2), m.group(2)) + b" <" + ` +
+		`{b"\x6f\x6c\x64\x40\x65\x78\x61\x6d\x70\x6c\x65\x2e\x6f\x72\x67": b"\x6e\x65\x77\x40\x65\x78\x61\x6d\x70\x6c\x65\x2e\x6f\x72\x67"}.get(m.group(3).lower(), m.group(3)) + b">", message)`
+	if got != want {
+		t.Errorf("callback = %s\nwant       %s", got, want)
+	}
+	if NewPlan().trailerCallback() != "" {
+		t.Error("an empty plan must give no callback")
+	}
+}

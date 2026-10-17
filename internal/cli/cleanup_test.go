@@ -374,3 +374,60 @@ func TestCleanupDoesNotWarnWithoutSignatures(t *testing.T) {
 		t.Errorf("signature warning without signed commits:\n%s", out)
 	}
 }
+
+// trailerMessage is a commit message with trailers of the old identity, of a
+// stranger, and a sentence that merely mentions one.
+const trailerMessage = `trailers
+
+The old Name appears in this body and so does a Signed-off-by: Old Name <old@example.org> sentence.
+
+Signed-off-by: Old Name <OLD@example.org>
+Co-authored-by: Old Name <old@example.org>
+Signed-off-by: Stranger <stranger@elsewhere.net>`
+
+func TestCleanupTrailers(t *testing.T) {
+	for _, withFlag := range []bool{false, true} {
+		name := "without --trailers"
+		if withFlag {
+			name = "with --trailers"
+		}
+		t.Run(name, func(t *testing.T) {
+			book, repo := cleanupFixture(t)
+			commitAs(t, repo, "Old Name", "old@example.org", trailerMessage)
+			msgOf := func() string { return gitRun(t, repo, "log", "-1", "--format=%B", "main") }
+			before := msgOf()
+
+			args := []string{"cleanup", "--yes", "--current-branch"}
+			if withFlag {
+				args = append(args, "--trailers")
+			}
+			out := mustRun(t, book, args...)
+			after := msgOf()
+			if !withFlag {
+				if after != before {
+					t.Errorf("message changed without --trailers:\n%s", after)
+				}
+				if strings.Contains(out, "(--trailers)") {
+					t.Errorf("announced trailer rewriting without the flag:\n%s", out)
+				}
+				return
+			}
+			if !strings.Contains(out, "(--trailers)") {
+				t.Errorf("trailer rewriting not announced:\n%s", out)
+			}
+			for _, want := range []string{
+				"Signed-off-by: Dirk Heilig <dirk@example.com>",
+				"Co-authored-by: Dirk Heilig <dirk@example.com>",
+				"Signed-off-by: Stranger <stranger@elsewhere.net>", // not in the address book
+				"The old Name appears in this body and so does a Signed-off-by: Old Name <old@example.org> sentence.",
+			} {
+				if !strings.Contains(after, want) {
+					t.Errorf("message lacks %q:\n%s", want, after)
+				}
+			}
+			if strings.Contains(after, "OLD@example.org") || strings.Contains(after, "\nCo-authored-by: Old") {
+				t.Errorf("an old trailer survived:\n%s", after)
+			}
+		})
+	}
+}

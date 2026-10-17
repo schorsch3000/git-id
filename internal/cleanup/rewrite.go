@@ -102,10 +102,48 @@ func callback(v string, m map[string]string) string {
 	return fmt.Sprintf("return {%s}.get(%s, %s)", strings.Join(pairs, ", "), v, v)
 }
 
+// trailerCallback returns the body of a filter-repo message callback that applies
+// the plan to the "Name <email>" of Signed-off-by and Co-authored-by trailers,
+// or "" if the plan changes nothing. Only lines that start with the trailer key
+// are touched, so a sentence mentioning one stays as it is; emails match
+// regardless of case, names exactly.
+func (p Plan) trailerCallback() string {
+	if p.Empty() {
+		return ""
+	}
+	names := map[string]string{}
+	for k, v := range p.Names {
+		names[k] = v
+	}
+	emails := map[string]string{}
+	for k, v := range p.Emails {
+		emails[strings.ToLower(k)] = v
+	}
+	return "return re.sub(rb\"(?m)^((?:Signed-off-by|Co-authored-by): )(.*?) <([^<>\\n]*)>\", " +
+		"lambda m: m.group(1) + " + pyDict(names) + ".get(m.group(2), m.group(2)) + b\" <\" + " +
+		pyDict(emails) + ".get(m.group(3).lower(), m.group(3)) + b\">\", message)"
+}
+
+// pyDict renders m as a python dict literal of bytes.
+func pyDict(m map[string]string) string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pairs := make([]string, len(keys))
+	for i, k := range keys {
+		pairs[i] = bytesLiteral(k) + ": " + bytesLiteral(m[k])
+	}
+	return "{" + strings.Join(pairs, ", ") + "}"
+}
+
 // Rewrite applies the plan with git filter-repo. With ref empty every ref is
-// rewritten, otherwise only that one. --partial keeps the origin remote,
-// remote-tracking refs and the reflog; the callbacks also cover tag authors.
-func Rewrite(dir string, p Plan, ref string) error {
+// rewritten, otherwise only that one. With trailers the names and emails of
+// Signed-off-by and Co-authored-by lines in commit messages are replaced too.
+// --partial keeps the origin remote, remote-tracking refs and the reflog; the
+// callbacks also cover tag authors.
+func Rewrite(dir string, p Plan, ref string, trailers bool) error {
 	args := []string{filterRepoSub, "--partial", "--force"}
 	if ref != "" {
 		args = append(args, "--refs", ref)
@@ -115,6 +153,11 @@ func Rewrite(dir string, p Plan, ref string) error {
 	}
 	if cb := callback("email", p.Emails); cb != "" {
 		args = append(args, "--email-callback", cb)
+	}
+	if trailers {
+		if cb := p.trailerCallback(); cb != "" {
+			args = append(args, "--message-callback", cb)
+		}
 	}
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

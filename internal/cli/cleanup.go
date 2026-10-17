@@ -14,7 +14,7 @@ import (
 )
 
 func newCleanupCmd() *cobra.Command {
-	var currentBranch, dryRun, yes bool
+	var currentBranch, dryRun, yes, trailers bool
 	cmd := &cobra.Command{
 		Use:   "cleanup",
 		Short: "Rewrite history so other identities' names and emails become the current identity",
@@ -32,19 +32,25 @@ lost, and by default ALL branches, tags and remote-tracking refs are rewritten.
 Use --current-branch to limit it to the checked-out branch. Before anything is
 changed a bundle of all refs is written into the git directory and the command
 to restore it is printed. Nothing is pushed. Needs git-filter-repo
-(not bundled), a clean work tree, and a typed "yes" before it rewrites.`,
+(not bundled), a clean work tree, and a typed "yes" before it rewrites.
+
+Commit messages stay as they are. With --trailers the accepted names and emails
+are also replaced in Signed-off-by and Co-authored-by lines (lines that start
+with the key; a sentence that mentions one is not touched). Which values are
+replaced is still decided by the author and committer fields of the commits.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCleanup(cmd, currentBranch, dryRun, yes)
+			return runCleanup(cmd, currentBranch, dryRun, yes, trailers)
 		},
 	}
 	cmd.Flags().BoolVar(&currentBranch, "current-branch", false, "rewrite only the checked-out branch instead of all refs")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be replaced and change nothing")
 	cmd.Flags().BoolVar(&yes, "yes", false, "accept every finding and skip the confirmation (for scripts)")
+	cmd.Flags().BoolVar(&trailers, "trailers", false, "also replace the accepted names and emails in Signed-off-by and Co-authored-by lines of commit messages")
 	return cmd
 }
 
-func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes bool) error {
+func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes, trailers bool) error {
 	out := cmd.OutOrStdout()
 	in := bufio.NewReader(cmd.InOrStdin())
 
@@ -127,6 +133,9 @@ func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes bool) error {
 
 	affected := plan.Affected(commits)
 	fmt.Fprintf(out, "\n%d of %d scanned commits carry a replaced value; they and all their descendants get new hashes.\n", len(affected), len(commits))
+	if trailers {
+		fmt.Fprintln(out, "Signed-off-by and Co-authored-by lines in commit messages get the same replacements (--trailers).")
+	}
 	if signed, err := cleanup.CountSigned(top, ref); err != nil {
 		return err
 	} else if signed > 0 {
@@ -149,7 +158,7 @@ func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes bool) error {
 		return fmt.Errorf("could not write the backup, nothing was changed: %w", err)
 	}
 	fmt.Fprintf(out, "Backup of all refs: %s\n", backup)
-	if err := cleanup.Rewrite(top, plan, ref); err != nil {
+	if err := cleanup.Rewrite(top, plan, ref, trailers); err != nil {
 		return fmt.Errorf("%w\nThe backup is at %s; restore with: %s", err, backup, cleanup.RestoreHint(backup))
 	}
 	fmt.Fprintf(out, "Done: history rewritten (%s).\n", scope)
