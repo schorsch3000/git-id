@@ -172,7 +172,7 @@ func newKeyCmd() *cobra.Command {
 				rows := []keyRow{}
 				for _, l := range b.Labels(store.KindKey) {
 					k := b.Keys[l]
-					rows = append(rows, keyRow{l, k.Private, k.Public, fingerprint(k)})
+					rows = append(rows, keyRow{l, k.Private, k.Public, store.Fingerprint(k)})
 				}
 				if wantJSON(cmd) {
 					return printJSON(cmd, rows)

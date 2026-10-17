@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
+	"golang.org/x/crypto/ssh"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -391,5 +395,216 @@ func TestUseWarnsWhenGitSSHCommandOverrides(t *testing.T) {
 	press(t, m, "enter")
 	if m.statusErr || !strings.Contains(m.status, "using identity work") || !strings.Contains(m.status, "GIT_SSH_COMMAND") {
 		t.Errorf("status %q (err=%v)", m.status, m.statusErr)
+	}
+}
+
+// sshDirFixture makes a directory shaped like ~/.ssh: two private keys (one
+// with a real public key), and files that are not private keys.
+func sshDirFixture(t *testing.T) (dir, ed, edPub, fingerprint string) {
+	t.Helper()
+	dir = t.TempDir()
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(privKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ed = filepath.Join(dir, "id_ed25519")
+	edPub = ed + ".pub"
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("id_ed25519", string(pem.EncodeToMemory(block)))
+	write("id_ed25519.pub", string(ssh.MarshalAuthorizedKey(sp)))
+	write("id_rsa", "-----BEGIN RSA PRIVATE KEY-----\nMIIB...\n-----END RSA PRIVATE KEY-----\n")
+	write("lonely.pub", "ssh-ed25519 AAAA... only a public key\n")
+	write("known_hosts", "github.com ssh-ed25519 AAAA...\n")
+	write("config", "Host *\n  IdentitiesOnly yes\n")
+	write("notes.txt", "-----BEGIN something else-----\n")
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir, ed, edPub, ssh.FingerprintSHA256(sp)
+}
+
+func TestDiscoverKeysFindsOnlyPrivateKeys(t *testing.T) {
+	dir, ed, edPub, fp := sshDirFixture(t)
+	keys, err := discoverKeys(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys[0].Name != "id_ed25519" || keys[1].Name != "id_rsa" {
+		t.Fatalf("keys = %+v", keys)
+	}
+	if keys[0].Path != ed || keys[0].Public != edPub || keys[0].Fingerprint != fp {
+		t.Errorf("id_ed25519 = %+v, want public %s fingerprint %s", keys[0], edPub, fp)
+	}
+	if keys[1].Public != "" || keys[1].Fingerprint != "" {
+		t.Errorf("id_rsa has no .pub but got %+v", keys[1])
+	}
+	if _, err := discoverKeys(filepath.Join(dir, "missing")); err == nil {
+		t.Error("missing directory gave no error")
+	}
+}
+
+func TestSuggestLabel(t *testing.T) {
+	for in, want := range map[string]string{
+		"id_ed25519": "ed25519", "id_work": "work", "deploy key": "deploy-key",
+		"github.pem": "github.pem", "id_": "", "---": "", "": "",
+	} {
+		if got := suggestLabel(in); got != want {
+			t.Errorf("suggestLabel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestPickKeyFillsTheForm(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	dir, ed, edPub, fp := sshDirFixture(t)
+	m.sshDir = dir
+
+	press(t, m, "l", "l", "l", "a") // keys tab, add form
+	if !strings.Contains(m.View(), "ctrl+o pick a key from ~/.ssh") {
+		t.Errorf("form does not advertise the picker:\n%s", m.View())
+	}
+	press(t, m, "ctrl+o")
+	if m.mode != modePicker {
+		t.Fatalf("mode = %v, want picker", m.mode)
+	}
+	v := m.View()
+	for _, want := range []string{dir, "id_ed25519", fp, "id_rsa", "(no .pub file)"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("picker lacks %q:\n%s", want, v)
+		}
+	}
+	for _, unwanted := range []string{"lonely", "known_hosts", "config", "notes.txt", "sub"} {
+		if strings.Contains(v, unwanted) {
+			t.Errorf("picker lists %q:\n%s", unwanted, v)
+		}
+	}
+
+	press(t, m, "enter") // first key
+	if m.mode != modeForm {
+		t.Fatalf("mode = %v, want form", m.mode)
+	}
+	if got := m.form.get("private"); got != ed {
+		t.Errorf("private = %q, want %q", got, ed)
+	}
+	if got := m.form.get("public"); got != edPub {
+		t.Errorf("public = %q, want %q", got, edPub)
+	}
+	if got := m.form.get("label"); got != "ed25519" {
+		t.Errorf("suggested label = %q", got)
+	}
+
+	press(t, m, "ctrl+s")
+	k := reload(t, m).Keys["ed25519"]
+	if k.Private != ed || k.Public != edPub {
+		t.Errorf("saved key = %+v", k)
+	}
+	if !strings.Contains(m.View(), "added key ed25519") {
+		t.Errorf("no success status:\n%s", m.View())
+	}
+}
+
+func TestPickKeyChoosesWithCursorAndKeepsLabel(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	dir, _, _, _ := sshDirFixture(t)
+	m.sshDir = dir
+	press(t, m, "l", "l", "l", "a", "mine", "ctrl+o", "down", "enter")
+	if got := m.form.get("private"); got != filepath.Join(dir, "id_rsa") {
+		t.Errorf("private = %q", got)
+	}
+	if got := m.form.get("public"); got != "" {
+		t.Errorf("public = %q, want empty for a key without .pub", got)
+	}
+	if got := m.form.get("label"); got != "mine" {
+		t.Errorf("an already typed label was replaced: %q", got)
+	}
+}
+
+func TestPickKeyDoesNotSuggestATakenLabel(t *testing.T) {
+	m, _ := fixture(t, newRepo(t)) // the book already has a key labelled k1
+	dir, _, _, _ := sshDirFixture(t)
+	// Sorted: id_ed25519, id_k1, id_rsa. The suggestion for id_k1 is "k1", taken.
+	if err := os.WriteFile(filepath.Join(dir, "id_k1"), []byte("-----BEGIN OPENSSH PRIVATE KEY-----\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.sshDir = dir
+	press(t, m, "l", "l", "l", "a", "ctrl+o", "down", "enter")
+	if got := m.form.get("private"); got != filepath.Join(dir, "id_k1") {
+		t.Fatalf("private = %q", got)
+	}
+	if got := m.form.get("label"); got != "" {
+		t.Errorf("label = %q, want it left empty because k1 is taken", got)
+	}
+}
+
+func TestPickerEscapeEmptyAndMissingDirectory(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	m.sshDir = t.TempDir() // empty
+	press(t, m, "l", "l", "l", "a", "ctrl+o")
+	if !strings.Contains(m.View(), "no private keys found") {
+		t.Errorf("empty directory:\n%s", m.View())
+	}
+	press(t, m, "enter") // nothing to choose: stays
+	if m.mode != modePicker {
+		t.Error("enter on an empty picker left it")
+	}
+	press(t, m, "esc")
+	if m.mode != modeForm || m.form.get("private") != "" {
+		t.Errorf("esc: mode %v private %q", m.mode, m.form.get("private"))
+	}
+
+	m.sshDir = filepath.Join(t.TempDir(), "nope")
+	press(t, m, "ctrl+o")
+	if m.picker.err == "" || !strings.Contains(m.View(), "no such file") {
+		t.Errorf("missing directory not reported:\n%s", m.View())
+	}
+}
+
+func TestPickerOnlyOnKeyForms(t *testing.T) {
+	m, _ := fixture(t, newRepo(t))
+	press(t, m, "l", "a") // names add form
+	press(t, m, "ctrl+o")
+	if m.mode != modeForm {
+		t.Errorf("ctrl+o opened the picker in a name form (mode %v)", m.mode)
+	}
+}
+
+func TestPickKeyInEditFormAndMarksKnownKeys(t *testing.T) {
+	m, keyFile := fixture(t, newRepo(t))
+	dir, ed, edPub, _ := sshDirFixture(t)
+	// The address book already knows id_rsa-like path: register one of the discovered keys.
+	b := reload(t, m)
+	if err := b.AddKey("known", store.Key{Private: ed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(m.path, b); err != nil {
+		t.Fatal(err)
+	}
+	m.book = b
+	m.sshDir = dir
+
+	press(t, m, "l", "l", "l", "e") // edit the first key (k1)
+	press(t, m, "ctrl+o")
+	if !strings.Contains(m.View(), "[in address book: known]") {
+		t.Errorf("known key not marked:\n%s", m.View())
+	}
+	press(t, m, "enter")
+	if m.form.target != "k1" || m.form.get("private") != ed || m.form.get("public") != edPub {
+		t.Errorf("edit form: target %q private %q public %q", m.form.target, m.form.get("private"), m.form.get("public"))
+	}
+	press(t, m, "ctrl+s")
+	if got := reload(t, m).Keys["k1"]; got.Private != ed || got.Public != edPub {
+		t.Errorf("k1 = %+v, want the picked key (was %s)", got, keyFile)
 	}
 }

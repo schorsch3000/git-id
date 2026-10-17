@@ -3,13 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh"
-
-	"git-id/internal/store"
 )
 
 // addJSONFlag gives a listing command a --json flag.
@@ -72,21 +68,4 @@ type identityDetail struct {
 	Key         string `json:"key"`
 	Public      string `json:"public,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
-}
-
-// fingerprint returns the SHA256 fingerprint of the public key file of k, "" if
-// there is none and "(unreadable)" if the file cannot be parsed as a public key.
-func fingerprint(k store.Key) string {
-	if k.Public == "" {
-		return ""
-	}
-	data, err := os.ReadFile(k.Public)
-	if err != nil {
-		return "(unreadable)"
-	}
-	pub, _, _, _, err := ssh.ParseAuthorizedKey(data)
-	if err != nil {
-		return "(unreadable)"
-	}
-	return ssh.FingerprintSHA256(pub)
 }

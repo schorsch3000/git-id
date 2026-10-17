@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -97,5 +99,37 @@ func TestTUIRefusesWithoutTerminal(t *testing.T) {
 	out, err := e.run(e.home, "git", "id", "tui")
 	if err == nil || !strings.Contains(out, "interactive terminal") {
 		t.Errorf("err %v, out %q", err, out)
+	}
+}
+
+// TestTUIKeyPicker opens the key form in a real terminal, picks a key from
+// ~/.ssh with ctrl+o and saves it.
+func TestTUIKeyPicker(t *testing.T) {
+	requireShell(t, "zsh")
+	e := completionEnv(t)
+	sshDir := filepath.Join(e.home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	priv, pub, _ := writeKeypair(t, sshDir, "id_picked")
+	repo := e.newRepo(t, "pickrepo", "ssh://x/y.git")
+
+	runTUI(t, e, repo, []tuiStep{
+		{nil, "id-one"},
+		{[]string{"l", "l", "l", "a"}, "ctrl+o pick a key"}, // keys tab, add form
+		{[]string{"\x0f"}, "id_picked"},                     // the picker lists the key
+		{[]string{"\r"}, "picked"},                          // chosen: the form shows path and label
+		{[]string{"\x13"}, "added key picked"},              // ctrl+s saves
+	})
+
+	out := e.gid(t, e.home, "key", "ls")
+	line := ""
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "picked") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, priv) || !strings.Contains(line, pub) || !strings.Contains(line, "SHA256:") {
+		t.Errorf("key not added through the picker, key ls:\n%s", out)
 	}
 }

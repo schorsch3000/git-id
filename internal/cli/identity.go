@@ -110,7 +110,7 @@ func newIdentityShowCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				d := identityDetail{r.Label, r.Name, r.Email, r.Key.Private, r.Key.Public, fingerprint(r.Key)}
+				d := identityDetail{r.Label, r.Name, r.Email, r.Key.Private, r.Key.Public, store.Fingerprint(r.Key)}
 				if wantJSON(cmd) {
 					return printJSON(cmd, d)
 				}

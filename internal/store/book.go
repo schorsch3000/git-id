@@ -400,3 +400,6 @@ func (b *Book) RenameIdentity(old, new string) error {
 	delete(b.Identities, old)
 	return nil
 }
+
+// HasKey reports whether an ssh key datapoint with this label exists.
+func (b *Book) HasKey(label string) bool { return b.has(KindKey, label) }

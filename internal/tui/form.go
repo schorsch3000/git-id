@@ -123,3 +123,13 @@ func (f *form) key(msg tea.KeyMsg) (submit bool) {
 	}
 	return false
 }
+
+// set replaces the value of a text field.
+func (f *form) set(name, value string) {
+	for i := range f.fields {
+		if f.fields[i].name == name && f.fields[i].kind == fieldText {
+			f.fields[i].input.SetValue(value)
+			f.fields[i].input.CursorEnd()
+		}
+	}
+}

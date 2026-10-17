@@ -52,7 +52,7 @@ identity cannot commit under the wrong name by accident.
 | `git id use <identity>` / `unuse` / `current` | apply, remove or show the identity of the current repository |
 | `git id sync` | re-apply identities to every repository that used one, after you edited the address book |
 | `git id repos ls\|forget` | the repositories `sync` tracks |
-| `git id tui` | everything above interactively |
+| `git id tui` | everything above interactively; in the key form `ctrl+o` lists the private keys in `~/.ssh` to choose from |
 | `git id cleanup` | rewrite history written under the wrong identity (see below) |
 | `git id hook`, `completion` | shell integration |
 

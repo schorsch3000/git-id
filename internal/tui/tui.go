@@ -4,6 +4,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,6 +47,7 @@ const (
 	modeList mode = iota
 	modeForm
 	modeConfirm
+	modePicker
 )
 
 type item struct{ label, desc string }
@@ -78,6 +81,8 @@ type Model struct {
 	mode    mode
 	form    *form
 	confirm *confirmation
+	picker  *picker
+	sshDir  string // where the key picker looks (default ~/.ssh)
 
 	status    string
 	statusErr bool
@@ -92,6 +97,9 @@ func New(path, dir string) (*Model, error) {
 		return nil, err
 	}
 	m := &Model{path: path, dir: dir, book: b}
+	if home, err := os.UserHomeDir(); err == nil {
+		m.sshDir = filepath.Join(home, ".ssh")
+	}
 	m.refreshRepo()
 	return m, nil
 }
@@ -202,6 +210,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateForm(key)
 	case modeConfirm:
 		m.updateConfirm(key)
+	case modePicker:
+		m.updatePicker(key)
 	default:
 		return m.updateList(key)
 	}
@@ -353,6 +363,10 @@ func (m *Model) openForm(add bool) {
 }
 
 func (m *Model) updateForm(key tea.KeyMsg) {
+	if key.String() == "ctrl+o" && m.tab == tabKeys {
+		m.openPicker()
+		return
+	}
 	if key.String() == "esc" {
 		m.mode, m.form = modeList, nil
 		m.setStatus("cancelled", false)
@@ -452,6 +466,8 @@ func (m *Model) View() string {
 		sb.WriteString(m.viewForm())
 	case modeConfirm:
 		sb.WriteString(m.confirm.prompt + "\n")
+	case modePicker:
+		sb.WriteString(m.viewPicker())
 	default:
 		sb.WriteString(m.viewList())
 	}
@@ -522,7 +538,12 @@ func (m *Model) viewForm() string {
 func (m *Model) help() string {
 	switch m.mode {
 	case modeForm:
+		if m.tab == tabKeys {
+			return "tab/shift+tab field  ctrl+o pick a key from ~/.ssh  enter next/save  ctrl+s save  esc cancel"
+		}
 		return "tab/shift+tab field  ←/→ choose  enter next/save  ctrl+s save  esc cancel"
+	case modePicker:
+		return "↑/↓ move  enter choose  esc back to the form"
 	case modeConfirm:
 		return "y confirm  any other key cancels"
 	}
@@ -531,4 +552,88 @@ func (m *Model) help() string {
 		h = "←/→ tab  ↑/↓ move  enter use here  a add  e edit  d delete  q quit"
 	}
 	return h
+}
+
+func (m *Model) openPicker() {
+	p := &picker{dir: m.sshDir}
+	keys, err := discoverKeys(m.sshDir)
+	if err != nil {
+		p.err = err.Error()
+	}
+	p.keys = keys
+	m.picker = p
+	m.mode = modePicker
+}
+
+func (m *Model) updatePicker(key tea.KeyMsg) {
+	p := m.picker
+	switch key.String() {
+	case "esc":
+		m.mode, m.picker = modeForm, nil
+	case "up", "k":
+		if p.cursor > 0 {
+			p.cursor--
+		}
+	case "down", "j":
+		if p.cursor < len(p.keys)-1 {
+			p.cursor++
+		}
+	case "enter":
+		if len(p.keys) == 0 {
+			return
+		}
+		k := p.keys[p.cursor]
+		m.form.set("private", k.Path)
+		m.form.set("public", k.Public)
+		if m.form.target == "" && m.form.get("label") == "" {
+			if l := suggestLabel(k.Name); l != "" && !m.book.HasKey(l) {
+				m.form.set("label", l)
+			}
+		}
+		m.mode, m.picker = modeForm, nil
+	}
+}
+
+// keyLabelsFor returns the labels under which the address book already holds
+// the private key at path.
+func (m *Model) keyLabelsFor(path string) []string {
+	var labels []string
+	for _, l := range m.book.Labels(store.KindKey) {
+		if m.book.Keys[l].Private == path {
+			labels = append(labels, l)
+		}
+	}
+	return labels
+}
+
+func (m *Model) viewPicker() string {
+	p := m.picker
+	var sb strings.Builder
+	sb.WriteString(cursorSty.Render("Choose a private key from "+p.dir) + "\n\n")
+	if p.err != "" {
+		sb.WriteString(errSty.Render(p.err) + "\n")
+	} else if len(p.keys) == 0 {
+		sb.WriteString(dimSty.Render("no private keys found there") + "\n")
+	}
+	width := 0
+	for _, k := range p.keys {
+		if len(k.Name) > width {
+			width = len(k.Name)
+		}
+	}
+	for i, k := range p.keys {
+		line := fmt.Sprintf("%-*s  %s", width, k.Name, k.Fingerprint)
+		if k.Public == "" {
+			line = fmt.Sprintf("%-*s  (no .pub file)", width, k.Name)
+		}
+		if labels := m.keyLabelsFor(k.Path); len(labels) > 0 {
+			line += "  [in address book: " + strings.Join(labels, ", ") + "]"
+		}
+		if i == p.cursor {
+			sb.WriteString(cursorSty.Render("> "+line) + "\n")
+		} else {
+			sb.WriteString("  " + line + "\n")
+		}
+	}
+	return sb.String()
 }
