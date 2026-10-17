@@ -151,9 +151,7 @@ func TestActionCommandsPrintJSON(t *testing.T) {
 	t.Chdir(gone)
 	mustRun(t, book, "use", "work")
 	t.Chdir(repo)
-	if err := os.RemoveAll(gone); err != nil {
-		t.Fatal(err)
-	}
+	removeAll(t, gone)
 	s := decode[syncResult](t, mustRun(t, book, "sync", "--json"))
 	if len(s.Repositories) != 2 {
 		t.Fatalf("sync = %+v", s)

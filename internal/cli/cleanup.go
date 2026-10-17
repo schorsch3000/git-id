@@ -84,17 +84,6 @@ func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes, trailers bool) e
 		scope = "branch " + strings.TrimPrefix(ref, "refs/heads/") + " only"
 	}
 
-	if !dryRun {
-		if err := cleanup.CheckFilterRepo(top); err != nil {
-			return err
-		}
-		if dirty, err := cleanup.IsDirty(top); err != nil {
-			return err
-		} else if dirty {
-			return fmt.Errorf("the work tree has uncommitted changes to tracked files; commit or stash them first")
-		}
-	}
-
 	commits, err := cleanup.Scan(top, ref)
 	if err != nil {
 		return err
@@ -105,6 +94,19 @@ func runCleanup(cmd *cobra.Command, currentBranch, dryRun, yes, trailers bool) e
 	if len(names) == 0 && len(emails) == 0 {
 		fmt.Fprintln(out, "Nothing to clean up: no other identity of the address book appears in this history.")
 		return nil
+	}
+
+	// Only a rewrite needs the tool and a clean work tree, so a history with
+	// nothing to replace works without git-filter-repo.
+	if !dryRun {
+		if err := cleanup.CheckFilterRepo(top); err != nil {
+			return err
+		}
+		if dirty, err := cleanup.IsDirty(top); err != nil {
+			return err
+		} else if dirty {
+			return fmt.Errorf("the work tree has uncommitted changes to tracked files; commit or stash them first")
+		}
 	}
 
 	fmt.Fprintln(out, "\nFound values of other identities:")

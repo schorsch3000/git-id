@@ -619,7 +619,7 @@ func TestPickerEscapeEmptyAndMissingDirectory(t *testing.T) {
 
 	m.sshDir = filepath.Join(t.TempDir(), "nope")
 	press(t, m, "ctrl+o")
-	if m.picker.err == "" || !strings.Contains(m.View(), "no such file") {
+	if m.picker.err == "" || !strings.Contains(m.View(), m.picker.err) {
 		t.Errorf("missing directory not reported:\n%s", m.View())
 	}
 }

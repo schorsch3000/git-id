@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -432,5 +433,49 @@ func TestCleanupTrailers(t *testing.T) {
 				t.Errorf("an old trailer survived:\n%s", after)
 			}
 		})
+	}
+}
+
+// hideFilterRepo puts only git on PATH, so git filter-repo cannot be found.
+func hideFilterRepo(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("PATH games with a symlink")
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(git, filepath.Join(dir, "git")); err != nil {
+		t.Skip("cannot symlink:", err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("GIT_EXEC_PATH", "")
+	if exec.Command("git", "filter-repo", "--version").Run() == nil {
+		t.Skip("git filter-repo is found anyway (installed next to git itself)")
+	}
+}
+
+// Only a rewrite needs git-filter-repo: a history with nothing to replace is
+// reported as clean without it, and a history with findings refuses before it
+// asks anything.
+func TestCleanupNeedsFilterRepoOnlyToRewrite(t *testing.T) {
+	book, repo := cleanupFixture(t)
+	hideFilterRepo(t)
+	before := history(t, repo)
+
+	if _, err := run(t, book, "cleanup", "--yes"); err == nil || !strings.Contains(err.Error(), "git-filter-repo is required") {
+		t.Errorf("expected the install hint, got %v", err)
+	}
+	if out, err := runIn(t, book, "", "cleanup"); err == nil || strings.Contains(out, "replace?") {
+		t.Errorf("asked questions although the tool is missing: err %v\n%s", err, out)
+	}
+	if history(t, repo) != before {
+		t.Error("history changed")
+	}
+	// A dry run only reports.
+	if out := mustRun(t, book, "cleanup", "--dry-run"); !strings.Contains(out, "Dry run") {
+		t.Errorf("dry run without the tool:\n%s", out)
 	}
 }

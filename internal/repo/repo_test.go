@@ -2,13 +2,14 @@ package repo
 
 import (
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestSSHCommandPinsNonDefaultBook(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", "/xdg")
-	if got := SSHCommand("/xdg/git-id/book.toml", "work"); got != "git id ssh work" {
+	t.Setenv("XDG_CONFIG_HOME", filepath.FromSlash("/xdg"))
+	if got := SSHCommand(filepath.FromSlash("/xdg/git-id/book.toml"), "work"); got != "git id ssh work" {
 		t.Errorf("default book: %q", got)
 	}
 	got := SSHCommand("/tmp/my book/it's.toml", "work")

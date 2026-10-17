@@ -198,7 +198,7 @@ func TestLoadRejectsDanglingReference(t *testing.T) {
 func TestDefaultPathXDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/x")
 	p, err := DefaultPath()
-	if err != nil || p != "/x/git-id/book.toml" {
+	if err != nil || p != filepath.Join("/x", "git-id", "book.toml") {
 		t.Errorf("path = %q, err %v", p, err)
 	}
 	if runtime.GOOS == "windows" {

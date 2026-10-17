@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"git-id/internal/gitcfg"
 	idrepo "git-id/internal/repo"
@@ -138,6 +139,20 @@ func TestCurrent(t *testing.T) {
 	}
 }
 
+// removeAll deletes dir, retrying for a moment: Windows keeps a directory locked
+// while a process (a finished git, a virus scanner) still holds a handle.
+func removeAll(t *testing.T, dir string) {
+	t.Helper()
+	var err error
+	for i := 0; i < 50; i++ {
+		if err = os.RemoveAll(dir); err == nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal(err)
+}
+
 func TestSyncPropagatesAndPrunes(t *testing.T) {
 	isolate(t)
 	book, _ := seed(t)
@@ -148,10 +163,8 @@ func TestSyncPropagatesAndPrunes(t *testing.T) {
 	}
 	mustRun(t, book, "email", "edit", "work", "new@example.com")
 	mustRun(t, book, "name", "edit", "me", "D. Heilig")
-	if err := os.RemoveAll(b); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(t.TempDir())
+	t.Chdir(t.TempDir()) // a process cannot delete its own working directory on Windows
+	removeAll(t, b)
 
 	out := mustRun(t, book, "sync")
 	if !strings.Contains(out, "synced "+a) || !strings.Contains(out, "dropped "+b) {
@@ -400,10 +413,8 @@ func TestReposListAndForget(t *testing.T) {
 	}
 	gitRun(t, bare, "config", "--local", "--unset", "id.identity")
 	gitRun(t, dangling, "config", "--local", "id.identity", "nope")
-	if err := os.RemoveAll(gone); err != nil {
-		t.Fatal(err)
-	}
 	t.Chdir(t.TempDir())
+	removeAll(t, gone)
 
 	out := mustRun(t, book, "repos", "ls")
 	for repo, want := range map[string]string{ok: "work  ok", gone: "missing", bare: "no-identity", dangling: "nope  unknown-identity"} {
