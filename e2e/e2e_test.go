@@ -60,6 +60,13 @@ func newEnv(t *testing.T) *env {
 	var vars []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
+		// CI, NO_COLOR, CLICOLOR_FORCE and COLORTERM decide whether colour
+		// libraries treat the pty as a terminal (CI makes them assume it is not);
+		// the tests set what they need and must not depend on the runner.
+		switch k {
+		case "CI", "NO_COLOR", "CLICOLOR_FORCE", "COLORTERM", "TERM":
+			continue
+		}
 		if strings.HasPrefix(k, "GIT_") || strings.HasPrefix(k, "SSH_") || k == "HOME" || k == "PATH" {
 			continue
 		}

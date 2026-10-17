@@ -25,7 +25,7 @@ zpty -d p 2>/dev/null
 func inTerminal(t *testing.T, e *env, extraEnv []string, cmd, want string) (string, time.Duration) {
 	t.Helper()
 	e2 := *e
-	e2.vars = append(append([]string{}, e.vars...), append(extraEnv, "TERM=xterm", "CMD="+cmd, "WANT="+want)...)
+	e2.vars = append(append([]string{}, e.vars...), append(extraEnv, "TERM=xterm-256color", "CMD="+cmd, "WANT="+want)...)
 	start := time.Now()
 	out, err := e2.run(e.home, "zsh", "-f", "-c", startupDriver)
 	if err != nil {

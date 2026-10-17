@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Downloading job logs needs admin rights, annotations are public. Each test
+# job therefore ends with a step that copies the failures of go test into one
+# annotation (open the run summary, or GET /check-runs/<id>/annotations).
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -20,7 +24,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bash-completion zsh fish git-filter-repo make zip openssh-client
       - run: make fmt-check vet
-      - run: make test
+      - name: go test
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -count=1 ./... 2>&1 | tee test.log
+      - name: Report failures as an annotation
+        if: failure()
+        shell: bash
+        run: |
+          msg=$(grep -E -B2 -A12 -- '--- FAIL|^FAIL|panic:' test.log | head -150 || true)
+          msg="${msg//'%'/'%25'}"; msg="${msg//$'\r'/'%0D'}"; msg="${msg//$'\n'/'%0A'}"
+          echo "::error title=go test failures (${{ runner.os }})::${msg}"
 
   # Run the tests on macOS and Windows too. The tests were written on Linux:
   # tools that are not there (fish, bash-completion, git-filter-repo) make the
@@ -40,7 +55,18 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      - name: go test
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -count=1 ./... 2>&1 | tee test.log
+      - name: Report failures as an annotation
+        if: failure()
+        shell: bash
+        run: |
+          msg=$(grep -E -B2 -A12 -- '--- FAIL|^FAIL|panic:' test.log | head -150 || true)
+          msg="${msg//'%'/'%25'}"; msg="${msg//$'\r'/'%0D'}"; msg="${msg//$'\n'/'%0A'}"
+          echo "::error title=go test failures (${{ runner.os }})::${msg}"
 
   # Compile every release target, so a platform-specific break shows up in a
   # pull request and not only when a release is cut.

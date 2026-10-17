@@ -141,7 +141,7 @@ func pressTab(t *testing.T, e *env, shellCmd, setup, tabs, startup string, c com
 	t.Helper()
 	e2 := *e
 	e2.vars = append(append([]string{}, e.vars...),
-		"TERM=xterm", "SHELL_CMD="+shellCmd, "SETUP="+setup, "LINE="+c.line,
+		"TERM=xterm-256color", "SHELL_CMD="+shellCmd, "SETUP="+setup, "LINE="+c.line,
 		"TABS="+tabs, "STARTUP="+startup, "WANT="+c.want[len(c.want)-1])
 	out, err := e2.run(e.home, "zsh", "-f", "-c", ptyDriver)
 	if err != nil {

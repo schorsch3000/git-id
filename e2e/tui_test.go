@@ -61,7 +61,7 @@ func runTUI(t *testing.T, e *env, repo string, steps []tuiStep) {
 		lines = append(lines, strings.Join(s.keys, "\x1e")+"\x1f"+s.want)
 	}
 	e2 := *e
-	e2.vars = append(append([]string{}, e.vars...), "TERM=xterm", "REPO="+repo, "STEPS="+strings.Join(lines, "\n"))
+	e2.vars = append(append([]string{}, e.vars...), "TERM=xterm-256color", "REPO="+repo, "STEPS="+strings.Join(lines, "\n"))
 	if out, err := e2.run(e.home, "zsh", "-f", "-c", tuiDriver); err != nil {
 		t.Fatalf("tui session failed: %v\n%s", err, out)
 	}
