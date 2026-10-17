@@ -29,6 +29,7 @@ func NewRootCmd() *cobra.Command {
 		newInitCmd(),
 		newHookCmd(),
 		newTUICmd(),
+		newCleanupCmd(),
 	)
 	root.AddCommand(newCompletionCmd(root))
 	attachCompletions(root)
