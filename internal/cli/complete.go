@@ -135,8 +135,9 @@ func must(err error) {
 const bashGitGlue = `
 # git completion calls _git_id for ` + "`git id <TAB>`" + `.
 _git_id() {
-    local COMP_WORDS=(git-id "${words[@]:2}")
-    local COMP_CWORD=$((cword - 1))
+    local idx=${__git_cmd_idx:-1}
+    local COMP_WORDS=(git-id "${words[@]:$((idx + 1))}")
+    local COMP_CWORD=$((cword - idx))
     local COMP_LINE="${COMP_WORDS[*]}"
     local COMP_POINT=${#COMP_LINE}
     __start_git-id
@@ -159,17 +160,30 @@ _git-id() {
 // fishGitGlue lets fish complete `git id <TAB>`. fish's own git completion is
 // meant to hand custom `git-*` commands over to their completions but does
 // not do so for git-id, so the tokens after `git id` are passed on explicitly.
-// Global git options before the subcommand (`git -C dir id`) are not handled.
+// Global git options before the subcommand (`git -C dir -c a=b id ...`) are
+// skipped; the ones that take a separate value are listed.
 const fishGitGlue = `
 # complete ` + "`git id ...`" + ` with the completions of git-id.
 function __git_id_in_git_id
     set -l tokens (commandline -opc)
-    test (count $tokens) -ge 2; and test $tokens[2] = id
+    set -e tokens[1]
+    while test (count $tokens) -gt 0
+        set -l t $tokens[1]
+        set -e tokens[1]
+        switch $t
+            case -C -c --git-dir --work-tree --namespace --super-prefix --config-env
+                test (count $tokens) -gt 0; and set -e tokens[1]
+            case '-*'
+            case '*'
+                test "$t" = id; or return 1
+                set -g __git_id_rest $tokens
+                return 0
+        end
+    end
+    return 1
 end
 function __git_id_git_complete
-    set -l tokens (commandline -opc)
-    set -e tokens[1..2]
-    set -l line (string join ' ' -- (string escape -- $tokens))
+    set -l line (string join ' ' -- (string escape -- $__git_id_rest))
     complete -C "git-id $line "(commandline -ct)
 end
 complete -c git -f -n __git_id_in_git_id -a '(__git_id_git_complete)'

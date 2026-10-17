@@ -104,6 +104,9 @@ var compCases = []compCase{
 	{line: "git id use ", want: []string{"id-one"}, not: []string{"em-one", "nm-one", "ky-one"}},
 	{line: "git id add x --email ", want: []string{"em-one", "em-two"}, not: []string{"nm-one", "ky-one", "id-one"}},
 	{line: "git id email rm ", want: []string{"em-one", "em-two"}, not: []string{"nm-one", "ky-one", "id-one"}},
+	// Global git options in front of the subcommand.
+	{line: "git -C /tmp id use ", want: []string{"id-one"}, not: []string{"em-one", "nm-one", "ky-one"}},
+	{line: "git -c user.name=x --no-pager id add x --email ", want: []string{"em-one", "em-two"}, not: []string{"nm-one", "ky-one", "id-one"}},
 }
 
 // ptyDriver types a line followed by TAB into a real interactive shell running
@@ -183,6 +186,72 @@ func checkCandidates(t *testing.T, shell string, c compCase, out string) {
 	for _, n := range c.not {
 		if strings.Contains(out, n) {
 			t.Errorf("%s %q: %q offered but must not be\n%s", shell, c.line, n, out)
+		}
+	}
+}
+
+// TestBashGitCompletionThroughGit goes through git's own completion function
+// (__git_main), which finds the subcommand behind global options and tells
+// _git_id where it is in __git_cmd_idx.
+func TestBashGitCompletionThroughGit(t *testing.T) {
+	const bashCompletion = "/usr/share/bash-completion/bash_completion"
+	const gitCompletion = "/usr/share/bash-completion/completions/git"
+	requireShell(t, "bash")
+	for _, f := range []string{bashCompletion, gitCompletion} {
+		if _, err := os.Stat(f); err != nil {
+			t.Skipf("%s not installed", f)
+		}
+	}
+	e := completionEnv(t)
+	try := func(words ...string) []string {
+		t.Helper()
+		quoted := make([]string, len(words))
+		for i, w := range words {
+			quoted[i] = "'" + w + "'"
+		}
+		script := `
+source ` + bashCompletion + `
+source ` + gitCompletion + `
+source <(git-id completion bash)
+COMP_WORDS=(` + strings.Join(quoted, " ") + `)
+COMP_CWORD=$((${#COMP_WORDS[@]} - 1))
+COMP_LINE="${COMP_WORDS[*]}"; COMP_POINT=${#COMP_LINE}
+COMPREPLY=()
+__git_wrap__git_main 2>/dev/null
+printf '%s\n' "${COMPREPLY[@]}"
+`
+		out, err := e.run(e.home, "bash", "-c", script)
+		if err != nil {
+			t.Fatalf("bash: %v\n%s", err, out)
+		}
+		var got []string
+		for _, l := range strings.Fields(out) {
+			got = append(got, l)
+		}
+		return got
+	}
+	has := func(list []string, s string) bool {
+		for _, x := range list {
+			if x == s {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct {
+		words []string
+		want  string
+		not   string
+	}{
+		{[]string{"git", "id", "use", ""}, "id-one", "em-one"},
+		{[]string{"git", "-C", "/tmp", "id", "use", ""}, "id-one", "em-one"},
+		{[]string{"git", "-c", "user.name=x", "-C", "/tmp", "id", "email", "rm", ""}, "em-one", "id-one"},
+		{[]string{"git", "--no-pager", "id", "use", ""}, "id-one", "em-one"},
+		{[]string{"git", "-C", "/tmp", "id", "em"}, "email", "name"},
+	} {
+		got := try(c.words...)
+		if !has(got, c.want) || has(got, c.not) {
+			t.Errorf("%q = %v, want %q and not %q", strings.Join(c.words, " "), got, c.want, c.not)
 		}
 	}
 }
