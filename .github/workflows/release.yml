@@ -1,0 +1,30 @@
+name: release
+
+# Push a tag such as v0.3.0 to build the archives and publish them.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bash-completion zsh fish git-filter-repo make zip openssh-client
+      # Runs fmt-check, vet and the tests before it builds anything.
+      - run: make release VERSION=${{ github.ref_name }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
