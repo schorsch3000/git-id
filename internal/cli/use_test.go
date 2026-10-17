@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"git-id/internal/gitcfg"
+	idrepo "git-id/internal/repo"
 	"git-id/internal/store"
 )
 
@@ -66,7 +67,7 @@ func TestUseAppliesIdentity(t *testing.T) {
 		"user.name":       "Dirk Heilig",
 		"user.email":      "dirk@example.com",
 		"id.identity":     "work",
-		"core.sshCommand": "git id ssh work",
+		"core.sshCommand": idrepo.SSHCommand(book, "work"),
 	} {
 		if got := gitRun(t, repo, "config", "--local", k); got != want {
 			t.Errorf("%s = %q, want %q", k, got, want)
@@ -101,7 +102,7 @@ func TestUseRefusesForeignSSHCommand(t *testing.T) {
 		t.Fatal("foreign core.sshCommand overwritten without --force")
 	}
 	mustRun(t, book, "use", "work", "--force")
-	if got := gitRun(t, repo, "config", "core.sshCommand"); got != "git id ssh work" {
+	if got := gitRun(t, repo, "config", "core.sshCommand"); got != idrepo.SSHCommand(book, "work") {
 		t.Errorf("core.sshCommand = %q", got)
 	}
 }

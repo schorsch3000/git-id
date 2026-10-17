@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	idrepo "git-id/internal/repo"
 	"git-id/internal/store"
 )
 
@@ -311,7 +312,7 @@ func TestUseAppliesIdentityToRepo(t *testing.T) {
 		"user.name":       "Dirk Heilig",
 		"user.email":      "dirk@example.com",
 		"id.identity":     "work",
-		"core.sshCommand": "git id ssh work",
+		"core.sshCommand": idrepo.SSHCommand(m.path, "work"),
 	} {
 		if got := gitRun(t, repo, "config", "--local", k); got != want {
 			t.Errorf("%s = %q, want %q", k, got, want)

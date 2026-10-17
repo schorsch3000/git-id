@@ -100,7 +100,7 @@ func newSyncCmd() *cobra.Command {
 				keep = append(keep, dir)
 				r, err := b.Resolve(label)
 				if err == nil {
-					err = repo.Apply(dir, r, false)
+					err = repo.Apply(dir, path, r, false)
 				}
 				if err != nil {
 					failed++

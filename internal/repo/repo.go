@@ -4,28 +4,46 @@ package repo
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"git-id/internal/gitcfg"
 	"git-id/internal/store"
 )
 
-const (
-	// SSHPrefix starts every core.sshCommand written by git-id.
-	SSHPrefix = "git id ssh "
-	// IdentityKey is the repo-local config key holding the identity label.
-	IdentityKey = "id.identity"
-)
+// IdentityKey is the repo-local config key holding the identity label.
+const IdentityKey = "id.identity"
+
+// sshCommandRe matches every core.sshCommand written by git-id, with or
+// without the address book pinned through GIT_ID_BOOK.
+var sshCommandRe = regexp.MustCompile(`^(GIT_ID_BOOK='(?:[^']|'\\'')*' )?git id ssh [A-Za-z0-9._-]+$`)
+
+// IsOurSSHCommand reports whether cmd is a core.sshCommand written by git-id.
+func IsOurSSHCommand(cmd string) bool { return sshCommandRe.MatchString(cmd) }
+
+// SSHCommand returns the core.sshCommand for an identity. The wrapper looks
+// the key up in the address book at run time, so when the book is not at the
+// default location its path is pinned: git runs the command in a shell that
+// knows neither --book nor a $GIT_ID_BOOK set in some other terminal.
+func SSHCommand(bookPath, label string) string {
+	cmd := "git id ssh " + label
+	if def, err := store.DefaultPath(); err != nil || def != bookPath {
+		cmd = "GIT_ID_BOOK=" + shellQuote(bookPath) + " " + cmd
+	}
+	return cmd
+}
+
+func shellQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // Apply writes an identity into the repo config of dir. A foreign
 // core.sshCommand is only replaced with force.
-func Apply(dir string, r store.Resolved, force bool) error {
+func Apply(dir, bookPath string, r store.Resolved, force bool) error {
 	if !force {
 		cur, ok, err := gitcfg.GetLocal(dir, "core.sshCommand")
 		if err != nil {
 			return err
 		}
-		if ok && !strings.HasPrefix(cur, SSHPrefix) {
+		if ok && !IsOurSSHCommand(cur) {
 			return fmt.Errorf("%s: core.sshCommand is already set to %q; use --force to replace it", dir, cur)
 		}
 	}
@@ -33,7 +51,7 @@ func Apply(dir string, r store.Resolved, force bool) error {
 		{"user.name", r.Name},
 		{"user.email", r.Email},
 		{IdentityKey, r.Label},
-		{"core.sshCommand", SSHPrefix + r.Label},
+		{"core.sshCommand", SSHCommand(bookPath, r.Label)},
 	} {
 		if err := gitcfg.SetLocal(dir, kv[0], kv[1]); err != nil {
 			return err
@@ -63,7 +81,7 @@ func Use(bookPath string, b *store.Book, label, dir string, force bool) (string,
 	if err != nil {
 		return "", fmt.Errorf("not inside a git repository")
 	}
-	if err := Apply(top, r, force); err != nil {
+	if err := Apply(top, bookPath, r, force); err != nil {
 		return "", err
 	}
 	if err := store.AddRepo(store.RegistryPath(bookPath), top); err != nil {

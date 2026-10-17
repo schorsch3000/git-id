@@ -200,6 +200,26 @@ func TestPushUsesIdentityKey(t *testing.T) {
 		wantLast("work-rotated", "/work.git", true)
 	})
 
+	t.Run("pinned book works without GIT_ID_BOOK in the environment", func(t *testing.T) {
+		// git runs core.sshCommand in a shell that never saw --book or the
+		// variable; the command itself must carry the book location.
+		var vars []string
+		for _, kv := range e.vars {
+			if !strings.HasPrefix(kv, "GIT_ID_BOOK=") {
+				vars = append(vars, kv)
+			}
+		}
+		bare := *e
+		bare.vars = vars
+		cmd := e.must(t, work, "git", "config", "--local", "core.sshCommand")
+		if !strings.HasPrefix(cmd, "GIT_ID_BOOK='") {
+			t.Fatalf("core.sshCommand does not pin the book: %q", cmd)
+		}
+		e.commit(t, work, "work 4")
+		bare.must(t, work, "git", "push", "-q", "origin", "main")
+		wantLast("work-rotated", "/work.git", true)
+	})
+
 	t.Run("repo without identity cannot push", func(t *testing.T) {
 		bare := e.newRepo(t, "bare", srv.url("/work.git"))
 		e.must(t, bare, "git", "-c", "user.name=x", "-c", "user.email=x@y.z", "commit", "-q", "--allow-empty", "-m", "x")
