@@ -7,4 +7,5 @@ RUN wget https://go.dev/dl/go1.27.2.linux-amd64.tar.gz && \
 ENV PATH="/usr/local/go/bin:${PATH}"
 
 
-RUN apt update && apt upgrade -y && apt install -y nodejs git bash-completion zsh fish git-filter-repo
+RUN apt update && apt upgrade -y && apt install -y \
+    nodejs git bash-completion zsh fish git-filter-repo make zip
