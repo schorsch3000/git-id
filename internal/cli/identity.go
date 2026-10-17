@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -76,25 +75,32 @@ func newIdentityRmCmd() *cobra.Command {
 }
 
 func newIdentityLsCmd() *cobra.Command {
-	return &cobra.Command{
+	return addJSONFlag(&cobra.Command{
 		Use:   "ls",
 		Short: "List identities",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return view(cmd, func(b *store.Book) error {
-				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+				rows := []identityRow{}
 				for _, l := range b.IdentityLabels() {
 					id := b.Identities[l]
-					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", l, id.Name, id.Email, id.Key)
+					rows = append(rows, identityRow{l, id.Name, id.Email, id.Key})
 				}
-				return tw.Flush()
+				if wantJSON(cmd) {
+					return printJSON(cmd, rows)
+				}
+				var t [][]string
+				for _, r := range rows {
+					t = append(t, []string{r.Label, r.Name, r.Email, r.Key})
+				}
+				return printTable(cmd, t)
 			})
 		},
-	}
+	})
 }
 
 func newIdentityShowCmd() *cobra.Command {
-	return &cobra.Command{
+	return addJSONFlag(&cobra.Command{
 		Use:   "show <identity>",
 		Short: "Show an identity with resolved values",
 		Args:  cobra.ExactArgs(1),
@@ -104,15 +110,20 @@ func newIdentityShowCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				d := identityDetail{r.Label, r.Name, r.Email, r.Key.Private, r.Key.Public, fingerprint(r.Key)}
+				if wantJSON(cmd) {
+					return printJSON(cmd, d)
+				}
 				out := cmd.OutOrStdout()
-				fmt.Fprintf(out, "identity: %s\nname:     %s\nemail:    %s\nkey:      %s\n", r.Label, r.Name, r.Email, r.Key.Private)
-				if r.Key.Public != "" {
-					fmt.Fprintf(out, "pubkey:   %s\n", r.Key.Public)
+				fmt.Fprintf(out, "identity: %s\nname:     %s\nemail:    %s\nkey:      %s\n", d.Identity, d.Name, d.Email, d.Key)
+				if d.Public != "" {
+					fmt.Fprintf(out, "pubkey:   %s\n", d.Public)
+					fmt.Fprintf(out, "fingerprint: %s\n", d.Fingerprint)
 				}
 				return nil
 			})
 		},
-	}
+	})
 }
 
 func newIdentityRenameCmd() *cobra.Command {

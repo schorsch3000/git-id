@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -42,21 +41,28 @@ func newValueCmd(vk valueKind) *cobra.Command {
 		},
 		newRenameCmd(vk.kind),
 		newRmCmd(vk.kind),
-		&cobra.Command{
+		addJSONFlag(&cobra.Command{
 			Use:   "ls",
 			Short: fmt.Sprintf("List %ss", k),
 			Args:  cobra.NoArgs,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return view(cmd, func(b *store.Book) error {
-					tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
 					vals := vk.values(b)
+					rows := []valueRow{}
 					for _, l := range b.Labels(vk.kind) {
-						fmt.Fprintf(tw, "%s\t%s\n", l, vals[l])
+						rows = append(rows, valueRow{l, vals[l]})
 					}
-					return tw.Flush()
+					if wantJSON(cmd) {
+						return printJSON(cmd, rows)
+					}
+					var t [][]string
+					for _, r := range rows {
+						t = append(t, []string{r.Label, r.Value})
+					}
+					return printTable(cmd, t)
 				})
 			},
-		},
+		}),
 	)
 	return root
 }
@@ -157,21 +163,28 @@ func newKeyCmd() *cobra.Command {
 	edit.Flags().StringVar(&editPriv, "private", "", "private key path")
 	edit.Flags().StringVar(&editPub, "public", "", "public key path (empty clears)")
 
-	ls := &cobra.Command{
+	ls := addJSONFlag(&cobra.Command{
 		Use:   "ls",
 		Short: "List ssh keys",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return view(cmd, func(b *store.Book) error {
-				tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+				rows := []keyRow{}
 				for _, l := range b.Labels(store.KindKey) {
 					k := b.Keys[l]
-					fmt.Fprintf(tw, "%s\t%s\t%s\n", l, k.Private, k.Public)
+					rows = append(rows, keyRow{l, k.Private, k.Public, fingerprint(k)})
 				}
-				return tw.Flush()
+				if wantJSON(cmd) {
+					return printJSON(cmd, rows)
+				}
+				var t [][]string
+				for _, r := range rows {
+					t = append(t, []string{r.Label, r.Private, r.Public, r.Fingerprint})
+				}
+				return printTable(cmd, t)
 			})
 		},
-	}
+	})
 
 	root.AddCommand(add, edit, newRenameCmd(store.KindKey), newRmCmd(store.KindKey), ls)
 	return root

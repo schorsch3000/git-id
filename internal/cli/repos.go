@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
@@ -74,7 +73,7 @@ func newReposCmd() *cobra.Command {
 		Short: "Show or forget the repositories tracked for sync",
 	}
 	root.AddCommand(
-		&cobra.Command{
+		addJSONFlag(&cobra.Command{
 			Use:   "ls",
 			Short: "List repositories that git id use registered, with their identity and state",
 			Args:  cobra.NoArgs,
@@ -88,15 +87,21 @@ func newReposCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
-					tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
+					rows := []repoInfo{}
 					for _, d := range dirs {
-						info := repoStatus(b, d)
-						fmt.Fprintf(tw, "%s\t%s\t%s\n", info.Path, info.Identity, info.Status)
+						rows = append(rows, repoStatus(b, d))
 					}
-					return tw.Flush()
+					if wantJSON(cmd) {
+						return printJSON(cmd, rows)
+					}
+					var t [][]string
+					for _, r := range rows {
+						t = append(t, []string{r.Path, r.Identity, r.Status})
+					}
+					return printTable(cmd, t)
 				})
 			},
-		},
+		}),
 		&cobra.Command{
 			Use:   "forget <path>",
 			Short: "Stop tracking a repository for sync (its configuration is not touched)",
