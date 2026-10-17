@@ -40,7 +40,7 @@ Needs Go to build; the binary has no runtime dependencies besides `git` and
 
 `init` imports the global `user.name` and `user.email` as the identity
 `default`, using the first of `~/.ssh/id_ed25519`, `id_ecdsa`, `id_rsa`, and
-removes both from the global git config, so that a repository without an
+removes both from the global git config and sets `user.useConfigOnly = true`, so that git cannot guess an author from the host name and a repository without an
 identity cannot commit under the wrong name by accident.
 
 ## Commands

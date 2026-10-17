@@ -428,3 +428,48 @@ func TestReposListAndForget(t *testing.T) {
 		t.Errorf("forget touched the repository: id.identity = %q", got)
 	}
 }
+
+func TestInitStopsGitFromGuessingAnAuthor(t *testing.T) {
+	home := isolate(t)
+	gitRun(t, home, "config", "--global", "user.name", "Dirk Heilig")
+	gitRun(t, home, "config", "--global", "user.email", "dirk@example.org")
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "id_ed25519"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	book := filepath.Join(home, "book.toml")
+
+	out := mustRun(t, book, "init")
+	if !strings.Contains(out, "user.useConfigOnly = true") {
+		t.Errorf("init does not report it:\n%s", out)
+	}
+	if got := gitRun(t, home, "config", "--global", "user.useConfigOnly"); got != "true" {
+		t.Errorf("user.useConfigOnly = %q", got)
+	}
+
+	repo := newRepo(t)
+	t.Chdir(repo)
+	commit := exec.Command("git", "commit", "-q", "--allow-empty", "-m", "x")
+	commit.Dir = repo
+	if o, err := commit.CombinedOutput(); err == nil || !strings.Contains(string(o), "auto-detection is disabled") {
+		t.Errorf("commit without identity: err %v\n%s", err, o)
+	}
+	mustRun(t, book, "use", "default")
+	gitRun(t, repo, "commit", "-q", "--allow-empty", "-m", "x") // identity now set locally
+	if got := gitRun(t, repo, "log", "-1", "--format=%an <%ae>"); got != "Dirk Heilig <dirk@example.org>" {
+		t.Errorf("author = %q", got)
+	}
+}
+
+func TestFailedInitLeavesGitAlone(t *testing.T) {
+	home := isolate(t)
+	if _, err := run(t, filepath.Join(home, "book.toml"), "init"); err == nil {
+		t.Fatal("init without global config succeeded")
+	}
+	if out, err := exec.Command("git", "config", "--global", "user.useConfigOnly").Output(); err == nil {
+		t.Errorf("user.useConfigOnly set by a failed init: %s", out)
+	}
+}

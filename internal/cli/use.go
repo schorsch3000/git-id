@@ -182,7 +182,7 @@ func newInitCmd() *cobra.Command {
 	var label, keyArg string
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Import the global git name/email into the address book and remove them from global config",
+		Short: "Import the global git name/email into the address book, remove them from global config and set user.useConfigOnly",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := store.ValidateLabel(label); err != nil {
@@ -248,6 +248,12 @@ func newInitCmd() *cobra.Command {
 				}
 			}
 			fmt.Fprintln(out, "removed global user.name and user.email")
+			// Without this git would guess an author from the user and host
+			// name in every repository that has no identity.
+			if err := gitcfg.SetGlobal("user.useConfigOnly", "true"); err != nil {
+				return fmt.Errorf("book saved, but setting user.useConfigOnly failed: %w", err)
+			}
+			fmt.Fprintln(out, "set user.useConfigOnly = true: git no longer guesses an author, repositories without an identity cannot commit")
 			return nil
 		},
 	}

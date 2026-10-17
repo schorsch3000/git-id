@@ -90,3 +90,9 @@ func UnsetLocal(dir, key string) error {
 	}
 	return err
 }
+
+// SetGlobal writes a key to the global config.
+func SetGlobal(key, value string) error {
+	_, err := run("", "config", "--global", key, value)
+	return err
+}

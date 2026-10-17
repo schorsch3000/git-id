@@ -52,7 +52,7 @@ Early development. Repo holds the design (`idea.md`), `Dockerfile.az` (the dev e
 - Binary named `git-id` so git runs it as subcommand `git id`.
 - Address book holds datapoints: names, email addresses, SSH keys. An *identity* = one name + one email + one SSH key.
 - Identities reference datapoints, not copy them: editing a name/email/key propagates to every identity using it.
-- `init` command: global setup. Takes existing global git user name and email, removes them from global config, moves them into the address book.
+- `init` command: global setup. Takes existing global git user name and email, removes them from global config, moves them into the address book, and sets `user.useConfigOnly = true` so git never guesses an author for a repository without an identity.
 - Shell hook (built, see Layout): on entering a directory with `.git`, check whether an identity is set; if not, tell the user to set one.
 - CLI: intuitive command language, generated shell autocompletion covering all datapoints.
 - TUI: choose an identity, manage datapoints and identities.
