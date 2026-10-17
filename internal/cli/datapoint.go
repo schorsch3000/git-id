@@ -40,6 +40,7 @@ func newValueCmd(vk valueKind) *cobra.Command {
 				return modify(cmd, func(b *store.Book) error { return vk.set(b, args[0], args[1]) })
 			},
 		},
+		newRenameCmd(vk.kind),
 		newRmCmd(vk.kind),
 		&cobra.Command{
 			Use:   "ls",
@@ -172,7 +173,7 @@ func newKeyCmd() *cobra.Command {
 		},
 	}
 
-	root.AddCommand(add, edit, newRmCmd(store.KindKey), ls)
+	root.AddCommand(add, edit, newRenameCmd(store.KindKey), newRmCmd(store.KindKey), ls)
 	return root
 }
 
@@ -188,4 +189,15 @@ func buildKey(private, public string, hasPublic bool) (store.Key, error) {
 		}
 	}
 	return k, nil
+}
+
+func newRenameCmd(kind store.Kind) *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <label> <new-label>",
+		Short: fmt.Sprintf("Rename a %s; identities using it follow", kind),
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return modify(cmd, func(b *store.Book) error { return b.RenameDatapoint(kind, args[0], args[1]) })
+		},
+	}
 }

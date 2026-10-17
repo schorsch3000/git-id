@@ -334,3 +334,69 @@ func (b *Book) IdentityLabels() []string {
 	sort.Strings(out)
 	return out
 }
+
+// RenameDatapoint gives a datapoint a new label; identities that reference it
+// follow. The new label must be valid and unused within the kind.
+func (b *Book) RenameDatapoint(k Kind, old, new string) error {
+	if err := ValidateLabel(new); err != nil {
+		return err
+	}
+	if !b.has(k, old) {
+		return fmt.Errorf("%s %q: %w", k, old, ErrNotFound)
+	}
+	if old == new {
+		return nil
+	}
+	if b.has(k, new) {
+		return fmt.Errorf("%s %q: %w", k, new, ErrExists)
+	}
+	switch k {
+	case KindName:
+		b.Names[new] = b.Names[old]
+		delete(b.Names, old)
+	case KindEmail:
+		b.Emails[new] = b.Emails[old]
+		delete(b.Emails, old)
+	case KindKey:
+		b.Keys[new] = b.Keys[old]
+		delete(b.Keys, old)
+	}
+	for l, id := range b.Identities {
+		switch k {
+		case KindName:
+			if id.Name == old {
+				id.Name = new
+			}
+		case KindEmail:
+			if id.Email == old {
+				id.Email = new
+			}
+		case KindKey:
+			if id.Key == old {
+				id.Key = new
+			}
+		}
+		b.Identities[l] = id
+	}
+	return nil
+}
+
+// RenameIdentity gives an identity a new label.
+func (b *Book) RenameIdentity(old, new string) error {
+	if err := ValidateLabel(new); err != nil {
+		return err
+	}
+	id, ok := b.Identities[old]
+	if !ok {
+		return fmt.Errorf("identity %q: %w", old, ErrNotFound)
+	}
+	if old == new {
+		return nil
+	}
+	if _, taken := b.Identities[new]; taken {
+		return fmt.Errorf("identity %q: %w", new, ErrExists)
+	}
+	b.Identities[new] = id
+	delete(b.Identities, old)
+	return nil
+}

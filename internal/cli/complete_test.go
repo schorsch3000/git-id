@@ -110,3 +110,17 @@ func TestCompletionScripts(t *testing.T) {
 		t.Error("unknown shell accepted")
 	}
 }
+
+func TestRenameCompletesOnlyTheOldLabel(t *testing.T) {
+	book, _ := seed(t)
+	for _, args := range [][]string{{"rename", ""}, {"email", "rename", ""}, {"name", "rename", ""}, {"key", "rename", ""}} {
+		if got, _ := complete(t, book, args...); len(got) == 0 {
+			t.Errorf("%v offered nothing", args)
+		}
+	}
+	for _, args := range [][]string{{"rename", "work", ""}, {"email", "rename", "work", ""}} {
+		if got, _ := complete(t, book, args...); len(got) != 0 {
+			t.Errorf("%v completed the new label: %v", args, got)
+		}
+	}
+}

@@ -97,6 +97,7 @@ func attachCompletions(root *cobra.Command) {
 		kind := string(k)
 		find(kind, "edit").ValidArgsFunction = completeLabels(k)
 		find(kind, "rm").ValidArgsFunction = completeLabels(k)
+		find(kind, "rename").ValidArgsFunction = completeLabels(k)
 		find(kind, "add").ValidArgsFunction = noCompletion
 	}
 	// `key add <label> <path>` and `key edit --private/--public` complete files
@@ -108,7 +109,7 @@ func attachCompletions(root *cobra.Command) {
 		return nil, cobra.ShellCompDirectiveDefault
 	}
 	find("add").ValidArgsFunction = noCompletion
-	for _, n := range []string{"edit", "rm", "show", "use"} {
+	for _, n := range []string{"edit", "rename", "rm", "show", "use"} {
 		find(n).ValidArgsFunction = completeIdentities
 	}
 	for _, n := range []string{"add", "edit"} {

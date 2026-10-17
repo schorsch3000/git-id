@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"git-id/internal/repo"
 	"git-id/internal/store"
 )
 
@@ -110,6 +111,28 @@ func newIdentityShowCmd() *cobra.Command {
 				}
 				return nil
 			})
+		},
+	}
+}
+
+func newIdentityRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <identity> <new-label>",
+		Short: "Rename an identity; repositories using it are updated",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := bookPath(cmd)
+			if err != nil {
+				return err
+			}
+			if err := modify(cmd, func(b *store.Book) error { return b.RenameIdentity(args[0], args[1]) }); err != nil {
+				return err
+			}
+			updated, err := repo.Relabel(path, args[0], args[1])
+			for _, dir := range updated {
+				fmt.Fprintf(cmd.OutOrStdout(), "updated %s\n", dir)
+			}
+			return err
 		},
 	}
 }

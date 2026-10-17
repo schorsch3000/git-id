@@ -23,6 +23,7 @@ func NewRootCmd() *cobra.Command {
 		newKeyCmd(),
 		newIdentityAddCmd(),
 		newIdentityEditCmd(),
+		newIdentityRenameCmd(),
 		newIdentityRmCmd(),
 		newIdentityLsCmd(),
 		newIdentityShowCmd(),

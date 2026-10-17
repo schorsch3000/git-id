@@ -274,3 +274,68 @@ func TestWarnsWhenGitSSHCommandOverrides(t *testing.T) {
 		t.Errorf("quiet current printed %q", out)
 	}
 }
+
+func TestRenameDatapointsThroughCLI(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	mustRun(t, book, "email", "rename", "work", "company")
+	mustRun(t, book, "name", "rename", "me", "dirk")
+	mustRun(t, book, "key", "rename", "k1", "mainkey")
+	out := mustRun(t, book, "show", "work")
+	for _, want := range []string{"Dirk Heilig", "dirk@example.com"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("identity broke after renames, missing %q:\n%s", want, out)
+		}
+	}
+	if ls := mustRun(t, book, "ls"); !strings.Contains(ls, "dirk") || !strings.Contains(ls, "company") || !strings.Contains(ls, "mainkey") {
+		t.Errorf("identity ls does not show the new labels:\n%s", ls)
+	}
+	if _, err := run(t, book, "email", "rename", "company", "bad label"); err == nil {
+		t.Error("invalid label accepted")
+	}
+	mustRun(t, book, "email", "add", "x", "x@y.z")
+	if _, err := run(t, book, "email", "rename", "x", "company"); err == nil {
+		t.Error("collision accepted")
+	}
+}
+
+func TestRenameIdentityUpdatesRepositories(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+	mustRun(t, book, "use", "work")
+
+	out := mustRun(t, book, "rename", "work", "company")
+	if !strings.Contains(out, "updated "+repo) {
+		t.Errorf("repository not reported:\n%s", out)
+	}
+	if got := gitRun(t, repo, "config", "--local", "id.identity"); got != "company" {
+		t.Errorf("id.identity = %q", got)
+	}
+	if got := gitRun(t, repo, "config", "--local", "core.sshCommand"); got != idrepo.SSHCommand(book, "company") {
+		t.Errorf("core.sshCommand = %q", got)
+	}
+	if got := strings.TrimSpace(mustRun(t, book, "current")); got != "company" {
+		t.Errorf("current = %q", got)
+	}
+	// Sync keeps working with the new label.
+	mustRun(t, book, "sync")
+
+	// A foreign core.sshCommand is left alone.
+	other := newRepo(t)
+	t.Chdir(other)
+	mustRun(t, book, "use", "company")
+	gitRun(t, other, "config", "core.sshCommand", "ssh -v")
+	mustRun(t, book, "rename", "company", "final")
+	if got := gitRun(t, other, "config", "--local", "core.sshCommand"); got != "ssh -v" {
+		t.Errorf("foreign core.sshCommand changed to %q", got)
+	}
+	if got := gitRun(t, other, "config", "--local", "id.identity"); got != "final" {
+		t.Errorf("id.identity = %q", got)
+	}
+
+	if _, err := run(t, book, "rename", "ghost", "x"); err == nil {
+		t.Error("renaming a missing identity succeeded")
+	}
+}

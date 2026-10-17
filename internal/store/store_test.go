@@ -204,3 +204,82 @@ func TestDefaultPathXDG(t *testing.T) {
 		t.Errorf("path = %q", p)
 	}
 }
+
+func TestRenameDatapointFollowsIdentities(t *testing.T) {
+	b := sample(t)
+	if err := b.RenameDatapoint(KindEmail, "work", "company"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.Emails["work"]; ok || b.Emails["company"] != "dirk@example.com" {
+		t.Errorf("emails = %v", b.Emails)
+	}
+	if got := b.Identities["work"].Email; got != "company" {
+		t.Errorf("identity email = %q, want company", got)
+	}
+	if got := b.Identities["priv"].Email; got != "priv" {
+		t.Errorf("unrelated identity changed: %q", got)
+	}
+	if err := b.Validate(); err != nil {
+		t.Errorf("book invalid after rename: %v", err)
+	}
+	r, err := b.Resolve("work")
+	if err != nil || r.Email != "dirk@example.com" {
+		t.Errorf("resolve = %+v, %v", r, err)
+	}
+
+	// The key of an identity follows too, and names/keys use their own namespace.
+	if err := b.RenameDatapoint(KindKey, "k1", "main-key"); err != nil {
+		t.Fatal(err)
+	}
+	if b.Identities["work"].Key != "main-key" || b.Identities["priv"].Key != "main-key" {
+		t.Errorf("identities = %+v", b.Identities)
+	}
+	if err := b.RenameDatapoint(KindName, "me", "dirk"); err != nil {
+		t.Fatal(err)
+	}
+	if b.Identities["work"].Name != "dirk" || b.Identities["work"].Key != "main-key" {
+		t.Errorf("identity = %+v", b.Identities["work"])
+	}
+}
+
+func TestRenameDatapointRefusals(t *testing.T) {
+	b := sample(t)
+	if err := b.RenameDatapoint(KindEmail, "work", "priv"); !errors.Is(err, ErrExists) {
+		t.Errorf("collision: %v", err)
+	}
+	if err := b.RenameDatapoint(KindEmail, "ghost", "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing: %v", err)
+	}
+	if err := b.RenameDatapoint(KindEmail, "work", "bad label"); err == nil {
+		t.Error("invalid label accepted")
+	}
+	if err := b.RenameDatapoint(KindEmail, "work", "work"); err != nil {
+		t.Errorf("rename to itself: %v", err)
+	}
+	// A name label equal to an email label is fine: kinds are separate.
+	if err := b.RenameDatapoint(KindName, "me", "work"); err != nil {
+		t.Errorf("cross-kind label reuse refused: %v", err)
+	}
+}
+
+func TestRenameIdentity(t *testing.T) {
+	b := sample(t)
+	if err := b.RenameIdentity("work", "company"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := b.Identities["work"]; ok {
+		t.Error("old label still present")
+	}
+	if _, err := b.Resolve("company"); err != nil {
+		t.Errorf("renamed identity unusable: %v", err)
+	}
+	if err := b.RenameIdentity("company", "priv"); !errors.Is(err, ErrExists) {
+		t.Errorf("collision: %v", err)
+	}
+	if err := b.RenameIdentity("ghost", "x"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("missing: %v", err)
+	}
+	if err := b.RenameIdentity("company", "-bad"); err == nil {
+		t.Error("invalid label accepted")
+	}
+}

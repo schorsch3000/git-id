@@ -98,3 +98,30 @@ const SSHOverrideWarning = "warning: $GIT_SSH_COMMAND is set in your environment
 
 // SSHOverridden reports whether $GIT_SSH_COMMAND overrides git-id's key selection.
 func SSHOverridden() bool { return os.Getenv("GIT_SSH_COMMAND") != "" }
+
+// Relabel makes the registered repositories that use identity old point at
+// new: the id.identity key and, if git-id wrote it, core.sshCommand. It
+// returns the repositories it changed; vanished ones are skipped.
+func Relabel(bookPath, old, new string) ([]string, error) {
+	repos, err := store.LoadRepos(store.RegistryPath(bookPath))
+	if err != nil {
+		return nil, err
+	}
+	var updated []string
+	for _, dir := range repos {
+		label, ok, err := gitcfg.GetLocal(dir, IdentityKey)
+		if err != nil || !ok || label != old {
+			continue
+		}
+		if err := gitcfg.SetLocal(dir, IdentityKey, new); err != nil {
+			return updated, err
+		}
+		if cur, ok, _ := gitcfg.GetLocal(dir, "core.sshCommand"); ok && IsOurSSHCommand(cur) {
+			if err := gitcfg.SetLocal(dir, "core.sshCommand", SSHCommand(bookPath, new)); err != nil {
+				return updated, err
+			}
+		}
+		updated = append(updated, dir)
+	}
+	return updated, nil
+}
