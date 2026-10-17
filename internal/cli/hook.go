@@ -27,6 +27,10 @@ var shellOverride = strings.ReplaceAll(overrideMessage, "$", `\$`)
 
 var bashHook = `# git-id: remind when entering a git repository without an identity.
 __git_id_last=
+# Bright red on a terminal (NO_COLOR switches it off), plain otherwise.
+__git_id_alert() {
+    if [ -t 2 ] && [ -z "${NO_COLOR-}" ]; then printf '\033[1;91m%s\033[0m\n' "$1" >&2; else printf '%s\n' "$1" >&2; fi
+}
 __git_id_hook() {
     # Find the repository root by walking up looking for .git, without running git.
     local d=$PWD
@@ -39,7 +43,7 @@ __git_id_hook() {
     git-id current -q 2>/dev/null
     local rc=$?
     if [ $rc -eq 1 ]; then
-        echo "` + hintMessage + `" >&2
+        __git_id_alert "` + hintMessage + `"
     elif [ $rc -eq 0 ] && [ -n "${GIT_SSH_COMMAND-}" ]; then
         echo "` + shellOverride + `" >&2
     fi
@@ -54,6 +58,10 @@ fi
 
 var zshHook = `# git-id: remind when entering a git repository without an identity.
 typeset -g __git_id_last=
+# Bright red on a terminal (NO_COLOR switches it off), plain otherwise.
+__git_id_alert() {
+    if [[ -t 2 && -z "${NO_COLOR-}" ]]; then printf '\033[1;91m%s\033[0m\n' "$1" >&2; else printf '%s\n' "$1" >&2; fi
+}
 __git_id_hook() {
     # Find the repository root by walking up looking for .git, without running git.
     local d=$PWD
@@ -66,7 +74,7 @@ __git_id_hook() {
     git-id current -q 2>/dev/null
     local rc=$?
     if [[ $rc -eq 1 ]]; then
-        print -u2 -- "` + hintMessage + `"
+        __git_id_alert "` + hintMessage + `"
     elif [[ $rc -eq 0 && -n "${GIT_SSH_COMMAND-}" ]]; then
         print -u2 -- "` + shellOverride + `"
     fi
@@ -79,6 +87,14 @@ __git_id_hook
 
 var fishHook = `# git-id: remind when entering a git repository without an identity.
 set -g __git_id_last ''
+# Bright red on a terminal (NO_COLOR switches it off), plain otherwise.
+function __git_id_alert
+    if isatty stderr; and test -z "$NO_COLOR"
+        printf '\033[1;91m%s\033[0m\n' $argv[1] >&2
+    else
+        printf '%s\n' $argv[1] >&2
+    end
+end
 function __git_id_hook --on-variable PWD
     # Find the repository root by walking up looking for .git, without running git.
     set -l d $PWD
@@ -96,7 +112,7 @@ function __git_id_hook --on-variable PWD
     git-id current -q 2>/dev/null
     set -l rc $status
     if test $rc -eq 1
-        echo "` + hintMessage + `" >&2
+        __git_id_alert "` + hintMessage + `"
     else if test $rc -eq 0; and test -n "$GIT_SSH_COMMAND"
         echo "` + shellOverride + `" >&2
     end

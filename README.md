@@ -81,7 +81,7 @@ bypassed. `use`, `current`, the TUI and the shell hook warn about it.
     eval "$(git-id hook bash)"          # or zsh; fish: git-id hook fish | source
     source <(git-id completion bash)    # zsh/fish/powershell: see git-id completion --help
 
-The hook reminds you when you enter a repository that has no identity, at its root or in any subdirectory, once per entry (moving around inside the repository is silent). It finds the repository by looking for `.git` in the current directory and its parents and never starts git.
+The hook reminds you when you enter a repository that has no identity, at its root or in any subdirectory, once per entry (moving around inside the repository is silent). The reminder is bold bright red on a terminal (`NO_COLOR=1` switches that off). It finds the repository by looking for `.git` in the current directory and its parents and never starts git.
 Completion knows the labels of your address book and also works for `git id <TAB>`
 in bash, zsh and fish.
 

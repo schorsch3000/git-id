@@ -237,3 +237,31 @@ func TestHooksSilentWithoutBinary(t *testing.T) {
 		})
 	}
 }
+
+// TestHookReminderIsBrightRedOnATerminal runs each hook in a pseudo-terminal:
+// the "no identity" reminder is bold bright red there, plain when NO_COLOR is
+// set. (The scenario tests above read stderr through a pipe, which is plain.)
+func TestHookReminderIsBrightRedOnATerminal(t *testing.T) {
+	h := newHookEnv(t)
+	const msg = "git-id: no identity set for this repository. Run: git id use <identity>   (git id ls lists them)"
+	cmds := map[string]string{
+		"bash": `bash -c 'eval "$(git-id hook bash)"; cd ` + h.bare + `; __git_id_hook'`,
+		"zsh":  `zsh -f -c 'eval "$(git-id hook zsh)"; cd ` + h.bare + `'`,
+		"fish": `fish --no-config -c 'git-id hook fish | source; cd ` + h.bare + `'`,
+	}
+	for shell, cmd := range cmds {
+		t.Run(shell, func(t *testing.T) {
+			requireShell(t, shell)
+			requireShell(t, "zsh") // the pty is provided by zsh's zpty
+			out, _ := inTerminal(t, h.env, nil, cmd, "lists them")
+			if !strings.Contains(out, "\x1b[1;91m"+msg+"\x1b[0m") {
+				t.Errorf("reminder is not bold bright red on a terminal:\n%q", out)
+			}
+
+			out, _ = inTerminal(t, h.env, []string{"NO_COLOR=1"}, cmd, "lists them")
+			if !strings.Contains(out, msg) || strings.Contains(out, "\x1b[") {
+				t.Errorf("NO_COLOR not honoured:\n%q", out)
+			}
+		})
+	}
+}
