@@ -13,7 +13,7 @@ import (
 )
 
 func newUnuseCmd() *cobra.Command {
-	return &cobra.Command{
+	return addJSONFlag(&cobra.Command{
 		Use:   "unuse",
 		Short: "Remove the identity from the current repository again",
 		Long: `Remove user.name, user.email, id.identity and the core.sshCommand written by
@@ -29,13 +29,16 @@ A core.sshCommand that git-id did not write is left alone.`,
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "removed the identity from %s\n", top)
 			if kept {
 				fmt.Fprintln(cmd.ErrOrStderr(), "note: core.sshCommand was not written by git-id and was left in place")
 			}
+			if wantJSON(cmd) {
+				return printJSON(cmd, unuseResult{Repository: top, KeptForeignSSHCommand: kept})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "removed the identity from %s\n", top)
 			return nil
 		},
-	}
+	})
 }
 
 // repoInfo describes one repository registered for sync.

@@ -69,3 +69,53 @@ type identityDetail struct {
 	Public      string `json:"public,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
+
+// Results of the commands that act, printed by their --json flag.
+
+type useResult struct {
+	Identity   string `json:"identity"`
+	Repository string `json:"repository"`
+}
+
+type currentResult struct {
+	Identity   string `json:"identity"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	Repository string `json:"repository"`
+}
+
+type unuseResult struct {
+	Repository            string `json:"repository"`
+	KeptForeignSSHCommand bool   `json:"kept_foreign_ssh_command"`
+}
+
+type syncRepo struct {
+	Path     string `json:"path"`
+	Identity string `json:"identity,omitempty"`
+	Status   string `json:"status"` // synced, dropped, failed
+	Error    string `json:"error,omitempty"`
+}
+
+type syncResult struct {
+	Repositories []syncRepo `json:"repositories"`
+}
+
+type initResult struct {
+	Label           string `json:"label"`
+	Name            string `json:"name,omitempty"`
+	Email           string `json:"email,omitempty"`
+	Key             string `json:"key,omitempty"`
+	IdentityCreated bool   `json:"identity_created"`
+	RemovedGlobal   bool   `json:"removed_global_name_and_email"`
+	UseConfigOnly   bool   `json:"user_use_config_only"`
+}
+
+type renameResult struct {
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	Updated []string `json:"updated_repositories"`
+}
+
+type removedResult struct {
+	RemovedIdentities []string `json:"removed_identities"`
+}

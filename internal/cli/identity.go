@@ -127,7 +127,7 @@ func newIdentityShowCmd() *cobra.Command {
 }
 
 func newIdentityRenameCmd() *cobra.Command {
-	return &cobra.Command{
+	return addJSONFlag(&cobra.Command{
 		Use:   "rename <identity> <new-label>",
 		Short: "Rename an identity; repositories using it are updated",
 		Args:  cobra.ExactArgs(2),
@@ -140,10 +140,19 @@ func newIdentityRenameCmd() *cobra.Command {
 				return err
 			}
 			updated, err := repo.Relabel(path, args[0], args[1])
-			for _, dir := range updated {
-				fmt.Fprintf(cmd.OutOrStdout(), "updated %s\n", dir)
+			if wantJSON(cmd) {
+				if updated == nil {
+					updated = []string{}
+				}
+				if perr := printJSON(cmd, renameResult{From: args[0], To: args[1], Updated: updated}); perr != nil {
+					return perr
+				}
+			} else {
+				for _, dir := range updated {
+					fmt.Fprintf(cmd.OutOrStdout(), "updated %s\n", dir)
+				}
 			}
 			return err
 		},
-	}
+	})
 }

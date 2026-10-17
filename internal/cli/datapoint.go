@@ -76,14 +76,24 @@ func newRmCmd(kind store.Kind) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return modify(cmd, func(b *store.Book) error {
 				gone, err := b.Remove(kind, args[0], force)
+				if err != nil {
+					return err
+				}
+				if wantJSON(cmd) {
+					if gone == nil {
+						gone = []string{}
+					}
+					return printJSON(cmd, removedResult{RemovedIdentities: gone})
+				}
 				for _, id := range gone {
 					fmt.Fprintf(cmd.OutOrStdout(), "removed identity %s\n", id)
 				}
-				return err
+				return nil
 			})
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "also remove identities that use it")
+	addJSONFlag(cmd)
 	return cmd
 }
 

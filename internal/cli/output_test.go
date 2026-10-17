@@ -127,3 +127,109 @@ func TestFingerprints(t *testing.T) {
 		t.Errorf("show --json fingerprint = %q", d.Fingerprint)
 	}
 }
+
+func TestActionCommandsPrintJSON(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+
+	u := decode[useResult](t, mustRun(t, book, "use", "work", "--json"))
+	if u != (useResult{"work", repo}) {
+		t.Errorf("use = %+v", u)
+	}
+	c := decode[currentResult](t, mustRun(t, book, "current", "--json"))
+	if c != (currentResult{"work", "Dirk Heilig", "dirk@example.com", repo}) {
+		t.Errorf("current = %+v", c)
+	}
+	// quiet and json together make no sense
+	if _, err := run(t, book, "current", "-q", "--json"); err == nil {
+		t.Error("-q with --json accepted")
+	}
+
+	gone := newRepo(t)
+	t.Chdir(gone)
+	mustRun(t, book, "use", "work")
+	t.Chdir(repo)
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	s := decode[syncResult](t, mustRun(t, book, "sync", "--json"))
+	if len(s.Repositories) != 2 {
+		t.Fatalf("sync = %+v", s)
+	}
+	got := map[string]syncRepo{}
+	for _, r := range s.Repositories {
+		got[r.Path] = r
+	}
+	if got[repo] != (syncRepo{Path: repo, Identity: "work", Status: "synced"}) || got[gone].Status != "dropped" {
+		t.Errorf("sync repositories = %+v", got)
+	}
+
+	r := decode[renameResult](t, mustRun(t, book, "rename", "work", "company", "--json"))
+	if r.From != "work" || r.To != "company" || len(r.Updated) != 1 || r.Updated[0] != repo {
+		t.Errorf("rename = %+v", r)
+	}
+
+	un := decode[unuseResult](t, mustRun(t, book, "unuse", "--json"))
+	if un != (unuseResult{Repository: repo}) {
+		t.Errorf("unuse = %+v", un)
+	}
+}
+
+func TestSyncJSONReportsFailuresAndStillFails(t *testing.T) {
+	isolate(t)
+	book, _ := seed(t)
+	repo := newRepo(t)
+	t.Chdir(repo)
+	mustRun(t, book, "use", "work")
+	mustRun(t, book, "rm", "work")
+	var out strings.Builder
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(new(strings.Builder))
+	cmd.SetArgs([]string{"--book", book, "sync", "--json"})
+	if err := cmd.Execute(); err == nil {
+		t.Error("sync with a dangling identity succeeded")
+	}
+	s := decode[syncResult](t, out.String())
+	if len(s.Repositories) != 1 || s.Repositories[0].Status != "failed" || s.Repositories[0].Error == "" {
+		t.Errorf("sync = %+v", s)
+	}
+}
+
+func TestRemovalAndInitJSON(t *testing.T) {
+	book, key, _ := setup(t)
+	mustRun(t, book, "name", "add", "me", "A")
+	mustRun(t, book, "email", "add", "e", "a@b.c")
+	mustRun(t, book, "key", "add", "k", key)
+	mustRun(t, book, "add", "x", "--name", "me", "--email", "e", "--key", "k")
+	if _, err := run(t, book, "email", "rm", "e", "--json"); err == nil {
+		t.Error("removing a used email without --force succeeded")
+	}
+	r := decode[removedResult](t, mustRun(t, book, "email", "rm", "e", "--force", "--json"))
+	if len(r.RemovedIdentities) != 1 || r.RemovedIdentities[0] != "x" {
+		t.Errorf("rm = %+v", r)
+	}
+	mustRun(t, book, "name", "add", "spare", "S")
+	if r := decode[removedResult](t, mustRun(t, book, "name", "rm", "spare", "--json")); r.RemovedIdentities == nil || len(r.RemovedIdentities) != 0 {
+		t.Errorf("rm without dependents = %+v, want an empty list", r)
+	}
+
+	home := isolate(t)
+	gitRun(t, home, "config", "--global", "user.name", "Dirk Heilig")
+	gitRun(t, home, "config", "--global", "user.email", "dirk@example.org")
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	k2 := filepath.Join(home, ".ssh", "id_ed25519")
+	if err := os.WriteFile(k2, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	in := decode[initResult](t, mustRun(t, filepath.Join(home, "book.toml"), "init", "--json"))
+	want := initResult{Label: "default", Name: "Dirk Heilig", Email: "dirk@example.org", Key: k2,
+		IdentityCreated: true, RemovedGlobal: true, UseConfigOnly: true}
+	if in != want {
+		t.Errorf("init = %+v, want %+v", in, want)
+	}
+}

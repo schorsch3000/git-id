@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -32,11 +33,15 @@ func newUseCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "using identity %s in %s\n", args[0], top)
 			warnSSHOverride(cmd)
+			if wantJSON(cmd) {
+				return printJSON(cmd, useResult{Identity: args[0], Repository: top})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "using identity %s in %s\n", args[0], top)
 			return nil
 		},
 	}
+	addJSONFlag(cmd)
 	cmd.Flags().BoolVar(&force, "force", false, "replace an existing foreign core.sshCommand")
 	return cmd
 }
@@ -57,23 +62,31 @@ func newCurrentCmd() *cobra.Command {
 				return fmt.Errorf("no identity set; run `git id use <identity>`")
 			}
 			return view(cmd, func(b *store.Book) error {
-				if _, err := b.Resolve(label); err != nil {
+				r, err := b.Resolve(label)
+				if err != nil {
 					return fmt.Errorf("repository uses identity %q which is unusable: %w", label, err)
 				}
-				if !quiet {
-					fmt.Fprintln(cmd.OutOrStdout(), label)
-					warnSSHOverride(cmd)
+				if quiet {
+					return nil
 				}
+				warnSSHOverride(cmd)
+				if wantJSON(cmd) {
+					top, _ := gitcfg.Toplevel("")
+					return printJSON(cmd, currentResult{Identity: label, Name: r.Name, Email: r.Email, Repository: top})
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), label)
 				return nil
 			})
 		},
 	}
 	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "print nothing, only set the exit status")
+	addJSONFlag(cmd)
+	cmd.MarkFlagsMutuallyExclusive("quiet", "json")
 	return cmd
 }
 
 func newSyncCmd() *cobra.Command {
-	return &cobra.Command{
+	return addJSONFlag(&cobra.Command{
 		Use:   "sync",
 		Short: "Re-apply identities to all repositories that use one",
 		Args:  cobra.NoArgs,
@@ -92,12 +105,17 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 			out, errOut := cmd.OutOrStdout(), cmd.ErrOrStderr()
+			json := wantJSON(cmd)
+			result := syncResult{Repositories: []syncRepo{}}
 			var keep []string
 			failed := 0
 			for _, dir := range repos {
 				label, ok, err := repoIdentity(dir)
 				if err != nil || !ok {
-					fmt.Fprintf(out, "dropped %s (gone or no identity)\n", dir)
+					result.Repositories = append(result.Repositories, syncRepo{Path: dir, Status: "dropped"})
+					if !json {
+						fmt.Fprintf(out, "dropped %s (gone or no identity)\n", dir)
+					}
 					continue
 				}
 				keep = append(keep, dir)
@@ -107,20 +125,31 @@ func newSyncCmd() *cobra.Command {
 				}
 				if err != nil {
 					failed++
-					fmt.Fprintf(errOut, "%s: %v\n", dir, err)
+					result.Repositories = append(result.Repositories, syncRepo{Path: dir, Identity: label, Status: "failed", Error: err.Error()})
+					if !json {
+						fmt.Fprintf(errOut, "%s: %v\n", dir, err)
+					}
 					continue
 				}
-				fmt.Fprintf(out, "synced %s (%s)\n", dir, label)
+				result.Repositories = append(result.Repositories, syncRepo{Path: dir, Identity: label, Status: "synced"})
+				if !json {
+					fmt.Fprintf(out, "synced %s (%s)\n", dir, label)
+				}
 			}
 			if err := store.SaveRepos(regPath, keep); err != nil {
 				return err
+			}
+			if json {
+				if err := printJSON(cmd, result); err != nil {
+					return err
+				}
 			}
 			if failed > 0 {
 				return fmt.Errorf("%d repositories failed to sync", failed)
 			}
 			return nil
 		},
-	}
+	})
 }
 
 // repoIdentity returns the identity label set in the repository at dir, if it still exists.
@@ -210,7 +239,11 @@ func newInitCmd() *cobra.Command {
 				key = store.Key{Private: priv, Public: pub}
 			}
 
-			out := cmd.OutOrStdout()
+			var out io.Writer = cmd.OutOrStdout()
+			if wantJSON(cmd) {
+				out = io.Discard // the result is printed as one object at the end
+			}
+			created := false
 			err = modify(cmd, func(b *store.Book) error {
 				if hasName {
 					if err := b.AddName(label, name); err != nil {
@@ -234,6 +267,7 @@ func newInitCmd() *cobra.Command {
 					if err := b.AddIdentity(label, store.Identity{Name: label, Email: label, Key: label}); err != nil {
 						return err
 					}
+					created = true
 					fmt.Fprintf(out, "created identity %s\n", label)
 				} else {
 					fmt.Fprintln(out, "no identity created: need a global name, email and an ssh key (use --key)")
@@ -255,11 +289,22 @@ func newInitCmd() *cobra.Command {
 				return fmt.Errorf("book saved, but setting user.useConfigOnly failed: %w", err)
 			}
 			fmt.Fprintln(out, "set user.useConfigOnly = true: git no longer guesses an author, repositories without an identity cannot commit")
+			if wantJSON(cmd) {
+				res := initResult{Label: label, IdentityCreated: created, RemovedGlobal: true, UseConfigOnly: true, Key: key.Private}
+				if hasName {
+					res.Name = name
+				}
+				if hasEmail {
+					res.Email = email
+				}
+				return printJSON(cmd, res)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&label, "label", "default", "label for the imported datapoints and identity")
 	cmd.Flags().StringVar(&keyArg, "key", "", "private key to import (default: first of ~/.ssh/id_ed25519, id_ecdsa, id_rsa)")
+	addJSONFlag(cmd)
 	return cmd
 }
 
