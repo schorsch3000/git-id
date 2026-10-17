@@ -19,7 +19,8 @@ const overrideMessage = "git-id: " + repo.SSHOverrideWarning
 // shellOverride is overrideMessage escaped for use inside double quotes.
 var shellOverride = strings.ReplaceAll(overrideMessage, "$", `\$`)
 
-// The hooks only call git-id when the directory contains .git. Exit status 1
+// The hooks look for .git in the current directory and its parents and remind
+// once per entry into a repository. Exit status 1
 // of "git-id current -q" means "no identity"; a missing git-id binary (127)
 // stays silent. With an identity set (status 0) they also check the
 // environment for $GIT_SSH_COMMAND.
@@ -27,9 +28,13 @@ var shellOverride = strings.ReplaceAll(overrideMessage, "$", `\$`)
 var bashHook = `# git-id: remind when entering a git repository without an identity.
 __git_id_last=
 __git_id_hook() {
-    [ "$PWD" = "$__git_id_last" ] && return 0
-    __git_id_last=$PWD
-    [ -e .git ] || return 0
+    # Find the repository root by walking up looking for .git, without running git.
+    local d=$PWD
+    while [ -n "$d" ] && [ ! -e "$d/.git" ]; do d=${d%/*}; done
+    if [ -z "$d" ]; then __git_id_last=; return 0; fi
+    # One reminder per entry into a repository, not per directory inside it.
+    [ "$d" = "$__git_id_last" ] && return 0
+    __git_id_last=$d
     command -v git-id >/dev/null 2>&1 || return 0
     git-id current -q 2>/dev/null
     local rc=$?
@@ -48,8 +53,15 @@ fi
 `
 
 var zshHook = `# git-id: remind when entering a git repository without an identity.
+typeset -g __git_id_last=
 __git_id_hook() {
-    [[ -e .git ]] || return 0
+    # Find the repository root by walking up looking for .git, without running git.
+    local d=$PWD
+    while [[ -n $d && ! -e $d/.git ]]; do d=${d%/*}; done
+    if [[ -z $d ]]; then __git_id_last=; return 0; fi
+    # One reminder per entry into a repository, not per directory inside it.
+    [[ $d == "$__git_id_last" ]] && return 0
+    __git_id_last=$d
     (( $+commands[git-id] )) || return 0
     git-id current -q 2>/dev/null
     local rc=$?
@@ -66,8 +78,20 @@ __git_id_hook
 `
 
 var fishHook = `# git-id: remind when entering a git repository without an identity.
+set -g __git_id_last ''
 function __git_id_hook --on-variable PWD
-    test -e .git; or return 0
+    # Find the repository root by walking up looking for .git, without running git.
+    set -l d $PWD
+    while test -n "$d"; and not test -e "$d/.git"
+        set d (string replace -r '/[^/]*$' '' -- $d)
+    end
+    if test -z "$d"
+        set -g __git_id_last ''
+        return 0
+    end
+    # One reminder per entry into a repository, not per directory inside it.
+    test "$d" = "$__git_id_last"; and return 0
+    set -g __git_id_last $d
     command -q git-id; or return 0
     git-id current -q 2>/dev/null
     set -l rc $status
@@ -84,15 +108,19 @@ func newHookCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "hook bash|zsh|fish",
 		Short: "Print a shell hook that reminds you to set an identity in repositories without one",
-		Long: `Print a shell snippet that checks, whenever you enter a directory containing
-.git, whether the repository has an identity ("git-id current -q") and prints a
-reminder if not. Add it to your shell startup file:
+		Long: `Print a shell snippet that checks, whenever you enter a git repository, at its
+root or in any subdirectory, whether the repository has an identity
+("git-id current -q") and prints a reminder if not. Add it to your shell
+startup file:
 
   bash:  eval "$(git-id hook bash)"      # ~/.bashrc
   zsh:   eval "$(git-id hook zsh)"       # ~/.zshrc
   fish:  git-id hook fish | source       # ~/.config/fish/config.fish
 
-Only directories that directly contain .git are checked, not subdirectories.`,
+You are reminded once per entry into a repository: moving between its
+subdirectories is silent, leaving the repository and coming back reminds again.
+The repository is found by looking for .git in the current directory and its
+parents, so the hook never starts git.`,
 		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		ValidArgs: []string{"bash", "zsh", "fish"},
 		RunE: func(cmd *cobra.Command, args []string) error {
