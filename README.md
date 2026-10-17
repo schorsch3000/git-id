@@ -56,7 +56,7 @@ identity cannot commit under the wrong name by accident.
 | `git id cleanup` | rewrite history written under the wrong identity (see below) |
 | `git id hook`, `completion` | shell integration |
 
-`ls` and `show` take `--json`. Deleting a datapoint that identities still use
+`git id --help` and the command help are coloured on a terminal (commands and flags you type in bold cyan, headings bold); `NO_COLOR=1` turns colours off, and piped output has none. `ls` and `show` take `--json`. Deleting a datapoint that identities still use
 is refused unless you pass `--force`, which removes those identities too.
 `git id --help` shows the manual page, `git-id <command> --help` the help of a command.
 

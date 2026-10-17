@@ -55,3 +55,25 @@ func TestNoTerminalQueryAtStartup(t *testing.T) {
 		}
 	}
 }
+
+// TestHelpColoursOnATerminal checks the real decision made for a tty: colours
+// on a terminal, off with NO_COLOR.
+func TestHelpColoursOnATerminal(t *testing.T) {
+	requireShell(t, "zsh")
+	e := completionEnv(t)
+
+	out, _ := inTerminal(t, e, nil, "git-id use --help", "Global Flags")
+	for _, want := range []string{"\x1b[1mUsage:\x1b[0m", "--force\x1b[0m"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("help on a terminal lacks %q:\n%q", want, out)
+		}
+	}
+
+	out, _ = inTerminal(t, e, []string{"NO_COLOR=1"}, "git-id use --help", "Global Flags")
+	if strings.Contains(out, "\x1b[") {
+		t.Errorf("NO_COLOR ignored on a terminal:\n%q", out)
+	}
+	if !strings.Contains(out, "Usage:") {
+		t.Errorf("no help text:\n%q", out)
+	}
+}

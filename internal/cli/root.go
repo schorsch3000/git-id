@@ -57,5 +57,6 @@ It is installed as git-id, so git runs it as "git id".`,
 	)
 	root.AddCommand(newCompletionCmd(root))
 	attachCompletions(root)
+	installHelp(root)
 	return root
 }
