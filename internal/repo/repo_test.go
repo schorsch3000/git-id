@@ -43,6 +43,9 @@ func TestIsOurSSHCommand(t *testing.T) {
 }
 
 func TestSSHCommandRoundTripsThroughAShell(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh on this system")
+	}
 	// The pinned path must survive a real shell with awkward characters.
 	book := "/tmp/we ird/$HOME/it's \"q\".toml"
 	cmd := strings.Replace(SSHCommand(book, "work"), "git id ssh work", `sh -c 'printf %s "$GIT_ID_BOOK"'`, 1)

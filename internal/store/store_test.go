@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -157,6 +158,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if !reflect.DeepEqual(b, got) {
 		t.Errorf("round trip mismatch:\nwant %+v\ngot  %+v", b, got)
 	}
+	if runtime.GOOS == "windows" {
+		return // POSIX permission bits do not exist there
+	}
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -196,6 +200,9 @@ func TestDefaultPathXDG(t *testing.T) {
 	p, err := DefaultPath()
 	if err != nil || p != "/x/git-id/book.toml" {
 		t.Errorf("path = %q, err %v", p, err)
+	}
+	if runtime.GOOS == "windows" {
+		return // falls back to %AppData%, not $HOME
 	}
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("HOME", "/h")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -35,9 +36,11 @@ func exitCode(err error) (int, bool) {
 	return 0, false
 }
 
-// Toplevel returns the root of the work tree containing dir.
+// Toplevel returns the root of the work tree containing dir, as a native path
+// (git prints forward slashes on Windows).
 func Toplevel(dir string) (string, error) {
-	return run(dir, "rev-parse", "--show-toplevel")
+	out, err := run(dir, "rev-parse", "--show-toplevel")
+	return filepath.FromSlash(out), err
 }
 
 func get(dir, scope, key string) (string, bool, error) {

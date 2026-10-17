@@ -63,6 +63,9 @@ const (
 //	side: c5 Old Name <priv@example.org>, annotated tag v1 tagged by Old Name
 func cleanupFixture(t *testing.T) (book, repo string) {
 	t.Helper()
+	if err := exec.Command("git", "filter-repo", "--version").Run(); err != nil {
+		t.Skip("git-filter-repo not installed")
+	}
 	book, _ = seed(t)
 	mustRun(t, book, "name", "add", "old", "Old Name")
 	mustRun(t, book, "email", "add", "old", "old@example.org")

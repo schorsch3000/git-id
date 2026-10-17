@@ -6,20 +6,29 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/pelletier/go-toml/v2"
 )
 
 // DefaultPath returns $XDG_CONFIG_HOME/git-id/book.toml, falling back to
-// ~/.config/git-id/book.toml.
+// ~/.config/git-id/book.toml (also on macOS, like other command line tools)
+// and to the user config directory (%AppData%) on Windows.
 func DefaultPath() (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
-		home, err := os.UserHomeDir()
+		var err error
+		if runtime.GOOS == "windows" {
+			dir, err = os.UserConfigDir()
+		} else {
+			var home string
+			if home, err = os.UserHomeDir(); err == nil {
+				dir = filepath.Join(home, ".config")
+			}
+		}
 		if err != nil {
 			return "", err
 		}
-		dir = filepath.Join(home, ".config")
 	}
 	return filepath.Join(dir, "git-id", "book.toml"), nil
 }

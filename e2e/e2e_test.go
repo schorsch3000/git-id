@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,9 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the end-to-end tests drive POSIX shells and an sh ssh shim")
+	}
 	for _, tool := range []string{"git", "ssh", "go", "git-receive-pack", "git-upload-pack"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not available: %v", tool, err)
